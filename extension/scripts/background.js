@@ -96,6 +96,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === 'RESOLVE_CLIP_DOWNLOAD_ID') {
+    resolveClipDownloadId(message.id)
+      .then((downloadId) => sendResponse({ success: true, downloadId }))
+      .catch((error) => sendResponse({ success: false, error: error.message || String(error) }));
+    return true;
+  }
+
   if (message.type === 'REQUEST_CLIPS') {
     chrome.storage.local.get({ clips: [] }).then((result) => {
       sendResponse({ success: true, clips: result.clips });
@@ -348,14 +355,10 @@ async function cleanupClipDownloads(clips) {
         return;
       }
 
-      let downloadId = typeof clip.downloadId === 'number' ? clip.downloadId : null;
-
-      if (downloadId === null) {
-        downloadId = await findDownloadIdByFilename(clip.filename).catch((error) => {
-          console.warn('Failed to locate download by filename', clip?.filename, error);
-          return null;
-        });
-      }
+      const downloadId = await resolveDownloadId(clip).catch((error) => {
+        console.warn('Failed to resolve download ID for cleanup', clip?.filename, error);
+        return null;
+      });
 
       if (downloadId === null) {
         return;
@@ -402,6 +405,51 @@ async function findDownloadIdByFilename(filename) {
 
 function escapeRegex(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+async function resolveClipDownloadId(id) {
+  const clip = await findClipById(id);
+  if (!clip) {
+    throw new Error('未找到指定的截图');
+  }
+  const downloadId = await resolveDownloadId(clip);
+  if (downloadId === null) {
+    throw new Error('找不到对应的本地文件');
+  }
+  return downloadId;
+}
+
+async function resolveDownloadId(clip) {
+  if (!clip) {
+    return null;
+  }
+
+  if (typeof clip.downloadId === 'number') {
+    const existing = await chrome.downloads.search({ id: clip.downloadId });
+    if (Array.isArray(existing) && existing.length > 0) {
+      return clip.downloadId;
+    }
+  }
+
+  const foundId = await findDownloadIdByFilename(clip.filename);
+  if (foundId !== null) {
+    clip.downloadId = foundId;
+    const { clips = [] } = await chrome.storage.local.get({ clips: [] });
+    const index = clips.findIndex((stored) => stored.id === clip.id);
+    if (index >= 0) {
+      clips[index] = { ...clips[index], downloadId: foundId };
+      await chrome.storage.local.set({ clips });
+    }
+  }
+  return foundId;
+}
+
+async function findClipById(id) {
+  if (!id) {
+    return null;
+  }
+  const { clips = [] } = await chrome.storage.local.get({ clips: [] });
+  return clips.find((clip) => clip.id === id) || null;
 }
 
 async function generatePdf(clipIds) {

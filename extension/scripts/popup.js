@@ -3,10 +3,16 @@ const generatePdfBtn = document.getElementById('generatePdf');
 const clearClipsBtn = document.getElementById('clearClips');
 const statusEl = document.getElementById('status');
 const clipListEl = document.getElementById('clipList');
+const previewOverlayEl = document.getElementById('previewOverlay');
+const previewImageEl = document.getElementById('previewImage');
+const previewTitleEl = document.getElementById('previewTitle');
+const previewMetaEl = document.getElementById('previewMeta');
+const previewCloseBtn = document.getElementById('previewClose');
 
 const state = {
   clips: [],
-  selected: new Set()
+  selected: new Set(),
+  previewingId: null
 };
 
 startCaptureBtn.addEventListener('click', handleStartCapture);
@@ -32,6 +38,26 @@ chrome.runtime.onMessage.addListener((message) => {
 });
 
 init();
+
+if (previewOverlayEl && previewCloseBtn) {
+  previewOverlayEl.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+    if (target.dataset.previewDismiss !== undefined || target === previewOverlayEl) {
+      closePreview();
+    }
+  });
+
+  previewCloseBtn.addEventListener('click', closePreview);
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && previewOverlayEl.classList.contains('visible')) {
+      closePreview();
+    }
+  });
+}
 
 async function init() {
   await loadClips();
@@ -96,6 +122,7 @@ async function handleClearClips() {
     }
     state.clips = [];
     state.selected.clear();
+    closePreview();
     renderClips();
     setStatus('已清空截图');
   } catch (error) {
@@ -139,23 +166,29 @@ function renderClips() {
       const thumbnail = document.createElement('img');
       thumbnail.src = clip.dataUrl;
       thumbnail.alt = clip.title || `截图 ${index + 1}`;
+      thumbnail.classList.add('clip-thumbnail');
+      thumbnail.addEventListener('click', () => handlePreviewClip(clip.id));
       item.appendChild(thumbnail);
 
       const meta = document.createElement('div');
       meta.className = 'clip-meta';
 
-      const title = document.createElement('div');
-      title.className = 'title';
+      const title = document.createElement('button');
+      title.type = 'button';
+      title.className = 'title clip-link';
       const displayTitle = clip.title || clip.filename;
       title.textContent = displayTitle;
       title.title = displayTitle;
+      title.addEventListener('click', () => handleRevealClip(clip.id));
       meta.appendChild(title);
 
-      const detail = document.createElement('div');
-      detail.className = 'detail';
+      const detail = document.createElement('button');
+      detail.type = 'button';
+      detail.className = 'detail clip-link';
       const detailText = `${clip.filename} · ${formatTime(clip.createdAt)}`;
       detail.textContent = detailText;
       detail.title = detailText;
+      detail.addEventListener('click', () => handleRevealClip(clip.id));
       meta.appendChild(detail);
 
       const actions = document.createElement('div');
@@ -184,6 +217,9 @@ async function handleRemoveClip(id) {
     }
     state.clips = state.clips.filter((clip) => clip.id !== id);
     state.selected.delete(id);
+    if (state.previewingId === id) {
+      closePreview();
+    }
     renderClips();
     setStatus('已删除截图');
   } catch (error) {
@@ -192,6 +228,79 @@ async function handleRemoveClip(id) {
   } finally {
     setWorking(false);
   }
+}
+
+function handlePreviewClip(id) {
+  const clip = state.clips.find((item) => item.id === id);
+  if (!clip) {
+    setStatus('找不到对应的截图', true);
+    return;
+  }
+  openPreview(clip);
+  setStatus('已打开截图预览');
+}
+
+async function handleRevealClip(id) {
+  const clip = state.clips.find((item) => item.id === id);
+  if (!clip) {
+    setStatus('找不到对应的截图', true);
+    return;
+  }
+
+  try {
+    let downloadId = typeof clip.downloadId === 'number' ? clip.downloadId : null;
+
+    if (downloadId !== null) {
+      const matches = await chrome.downloads.search({ id: downloadId });
+      if (!Array.isArray(matches) || matches.length === 0) {
+        downloadId = null;
+      }
+    }
+
+    if (downloadId === null) {
+      const response = await chrome.runtime.sendMessage({ type: 'RESOLVE_CLIP_DOWNLOAD_ID', id });
+      if (!response?.success || typeof response.downloadId !== 'number') {
+        throw new Error(response?.error || '无法定位文件');
+      }
+      downloadId = response.downloadId;
+      clip.downloadId = downloadId;
+    }
+
+    chrome.downloads.show(downloadId);
+    setStatus('已在文件夹中定位截图');
+  } catch (error) {
+    console.error(error);
+    setStatus(error.message, true);
+  }
+}
+
+function openPreview(clip) {
+  if (!previewOverlayEl || !previewImageEl || !previewTitleEl || !previewMetaEl) {
+    return;
+  }
+
+  state.previewingId = clip.id;
+  previewImageEl.src = clip.dataUrl;
+  previewImageEl.alt = clip.title || clip.filename;
+  previewTitleEl.textContent = clip.title || clip.filename;
+  previewMetaEl.textContent = `${clip.filename} · ${formatTime(clip.createdAt)}`;
+
+  previewOverlayEl.hidden = false;
+  previewOverlayEl.classList.add('visible');
+
+  if (previewCloseBtn) {
+    previewCloseBtn.focus({ preventScroll: true });
+  }
+}
+
+function closePreview() {
+  if (!previewOverlayEl || !previewImageEl) {
+    return;
+  }
+  state.previewingId = null;
+  previewOverlayEl.classList.remove('visible');
+  previewOverlayEl.hidden = true;
+  previewImageEl.src = '';
 }
 
 function formatTime(value) {

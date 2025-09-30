@@ -13,6 +13,19 @@
     </header>
     <section id="status" class="status" role="status" aria-live="polite"></section>
     <main id="clipList" class="clip-list"></main>
+    <div id="previewOverlay" class="preview-overlay" hidden>
+      <div class="preview-backdrop" data-preview-dismiss></div>
+      <div class="preview-panel" role="dialog" aria-modal="true" aria-labelledby="previewTitle">
+        <button id="previewClose" class="preview-close" type="button" data-preview-dismiss>&times;</button>
+        <div class="preview-info">
+          <div id="previewTitle" class="preview-title"></div>
+          <div id="previewMeta" class="preview-meta"></div>
+        </div>
+        <div class="preview-frame">
+          <img id="previewImage" class="preview-image" alt="截图预览" />
+        </div>
+      </div>
+    </div>
     <script type="module" src="scripts/popup.js"></script>
   </body>
 </html>
