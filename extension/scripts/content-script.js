@@ -440,7 +440,43 @@
     }
   };
 
-  chrome.runtime.onMessage.addListener((message) => {
+  const captureWebpage = async () => {
+    try {
+      // 获取整个页面的 HTML 内容
+      const htmlContent = document.documentElement.outerHTML;
+
+      // 获取所有内联样式和外部样式表
+      const styles = Array.from(document.styleSheets)
+        .map(sheet => {
+          try {
+            return Array.from(sheet.cssRules)
+              .map(rule => rule.cssText)
+              .join('\n');
+          } catch (e) {
+            // 跨域样式表无法访问
+            return '';
+          }
+        })
+        .filter(s => s)
+        .join('\n');
+
+      // 发送到后台脚本保存
+      const response = await chrome.runtime.sendMessage({
+        type: 'SAVE_WEBPAGE',
+        htmlContent,
+        styles,
+        url: window.location.href,
+        title: document.title
+      });
+
+      return response;
+    } catch (error) {
+      console.error('Failed to capture webpage.', error);
+      return { success: false, error: error.message };
+    }
+  };
+
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (!message || !message.type) {
       return;
     }
@@ -455,6 +491,10 @@
     }
     if (message.type === 'CAPTURE_FULL_PAGE') {
       captureFullPage();
+    }
+    if (message.type === 'CAPTURE_WEBPAGE') {
+      captureWebpage().then(response => sendResponse(response));
+      return true;
     }
   });
 })();

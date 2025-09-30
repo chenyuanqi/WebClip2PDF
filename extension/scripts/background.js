@@ -116,6 +116,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .catch((error) => sendResponse({ success: false, error: error.message || String(error) }));
     return true;
   }
+
+  if (message.type === 'SAVE_WEBPAGE') {
+    saveWebpage(message)
+      .then((clip) => sendResponse({ success: true, clip }))
+      .catch((error) => sendResponse({ success: false, error: error.message || String(error) }));
+    return true;
+  }
 });
 
 async function capturePart(message, windowId) {
@@ -509,6 +516,60 @@ async function findClipById(id) {
   return clips.find((clip) => clip.id === id) || null;
 }
 
+async function saveWebpage(message) {
+  const { htmlContent, styles, title, url } = message;
+  const { clips = [], clipCounter = 0 } = await chrome.storage.local.get({ clips: [], clipCounter: 0 });
+  const nextCounter = clipCounter + 1;
+  const indexLabel = String(nextCounter).padStart(3, '0');
+
+  // 创建完整的 HTML 文档
+  const completeHtml = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>${title || 'Saved Webpage'}</title>
+  <style>${styles}</style>
+</head>
+<body>
+${htmlContent}
+</body>
+</html>`;
+
+  // 使用页面标题作为文件名，清理非法字符
+  const sanitizedTitle = (title || 'webpage').replace(/[<>:"/\\|?*]/g, '-').substring(0, 100);
+  const filename = `${sanitizedTitle}-${indexLabel}.html`;
+
+  const timestamp = new Date().toISOString();
+  const clip = {
+    id: crypto.randomUUID(),
+    filename,
+    title,
+    url,
+    createdAt: timestamp,
+    type: 'webpage',
+    htmlContent: completeHtml
+  };
+
+  // 保存 HTML 文件
+  const htmlBlob = new Blob([completeHtml], { type: 'text/html' });
+  const htmlDataUrl = await blobToDataUrl(htmlBlob);
+
+  const downloadId = await chrome.downloads.download({
+    url: htmlDataUrl,
+    filename: `${CLIP_DOWNLOAD_FOLDER}/${filename}`,
+    saveAs: false,
+    conflictAction: 'uniquify'
+  });
+
+  clip.downloadId = downloadId;
+
+  clips.push(clip);
+  await chrome.storage.local.set({ clips, clipCounter: nextCounter });
+
+  chrome.runtime.sendMessage({ type: 'CLIP_ADDED', clip });
+  return clip;
+}
+
 async function generatePdf(clipIds) {
   const { clips = [] } = await chrome.storage.local.get({ clips: [] });
   const selected = clipIds && clipIds.length ? clips.filter((clip) => clipIds.includes(clip.id)) : clips;
@@ -516,19 +577,57 @@ async function generatePdf(clipIds) {
     throw new Error('没有可用的截图');
   }
 
-  const pdfBuffer = await createPdf(selected);
-  const base64Pdf = arrayBufferToDataUrl(pdfBuffer, 'application/pdf');
+  // 分离截图和网页类型
+  const imageClips = selected.filter(clip => clip.type !== 'webpage');
+  const webpageClips = selected.filter(clip => clip.type === 'webpage');
+
+  if (webpageClips.length > 0 && imageClips.length === 0) {
+    // 仅网页类型，使用浏览器的打印功能生成 PDF
+    return await generateWebpagePdf(webpageClips);
+  } else if (imageClips.length > 0) {
+    // 有截图类型，使用原有的图片 PDF 生成方式
+    const pdfBuffer = await createPdf(imageClips);
+    const base64Pdf = arrayBufferToDataUrl(pdfBuffer, 'application/pdf');
+
+    const indexLabel = String(Date.now());
+    const filename = `WebClip-${indexLabel}.pdf`;
+    await chrome.downloads.download({
+      url: base64Pdf,
+      filename: `${CLIP_DOWNLOAD_FOLDER}/${filename}`,
+      saveAs: true,
+      conflictAction: 'uniquify'
+    });
+
+    return { filename, url: base64Pdf };
+  } else {
+    throw new Error('没有可用的内容');
+  }
+}
+
+async function generateWebpagePdf(webpageClips) {
+  // 合并所有网页内容
+  const combinedHtml = webpageClips
+    .map(clip => clip.htmlContent || '')
+    .join('\n<hr style="page-break-after: always;">\n');
+
+  // 创建一个临时的 HTML 文件
+  const htmlBlob = new Blob([combinedHtml], { type: 'text/html' });
+  const htmlDataUrl = await blobToDataUrl(htmlBlob);
 
   const indexLabel = String(Date.now());
-  const filename = `WebClip-${indexLabel}.pdf`;
+  const filename = `WebClip-Webpage-${indexLabel}.html`;
+
+  // 下载 HTML 文件供用户手动转换为 PDF
+  // 注意：由于浏览器 API 限制，我们无法直接将网页转换为 PDF
+  // 用户需要手动打开 HTML 文件并使用浏览器的打印功能转为 PDF
   await chrome.downloads.download({
-    url: base64Pdf,
+    url: htmlDataUrl,
     filename: `${CLIP_DOWNLOAD_FOLDER}/${filename}`,
     saveAs: true,
     conflictAction: 'uniquify'
   });
 
-  return { filename, url: base64Pdf };
+  return { filename, url: htmlDataUrl, note: '网页内容已保存为 HTML，请手动打印为 PDF' };
 }
 
 async function createPdf(clips) {

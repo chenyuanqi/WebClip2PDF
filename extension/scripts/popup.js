@@ -1,5 +1,6 @@
 const startCaptureBtn = document.getElementById('startCapture');
 const captureFullPageBtn = document.getElementById('captureFullPage');
+const captureWebpageBtn = document.getElementById('captureWebpage');
 const generatePdfBtn = document.getElementById('generatePdf');
 const clearClipsBtn = document.getElementById('clearClips');
 const selectAllClipsBtn = document.getElementById('selectAllClips');
@@ -23,6 +24,9 @@ const state = {
 startCaptureBtn.addEventListener('click', handleStartCapture);
 if (captureFullPageBtn) {
   captureFullPageBtn.addEventListener('click', handleCaptureFullPage);
+}
+if (captureWebpageBtn) {
+  captureWebpageBtn.addEventListener('click', handleCaptureWebpage);
 }
 generatePdfBtn.addEventListener('click', handleGeneratePdf);
 clearClipsBtn.addEventListener('click', handleClearClips);
@@ -110,6 +114,27 @@ async function handleCaptureFullPage() {
   window.close();
 }
 
+async function handleCaptureWebpage() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id) {
+    setStatus('无法获取当前标签页', true);
+    return;
+  }
+  setWorking(true);
+  try {
+    const response = await chrome.tabs.sendMessage(tab.id, { type: 'CAPTURE_WEBPAGE' });
+    if (!response?.success) {
+      throw new Error(response?.error || '无法捕获网页内容');
+    }
+    setStatus('网页内容已保存');
+  } catch (error) {
+    console.error(error);
+    setStatus(error.message, true);
+  } finally {
+    setWorking(false);
+  }
+}
+
 async function handleGeneratePdf() {
   if (!state.selected.size) {
     setStatus('请至少选择一张截图', true);
@@ -125,7 +150,11 @@ async function handleGeneratePdf() {
     if (!response?.success) {
       throw new Error(response?.error || '生成 PDF 失败');
     }
-    setStatus('已触发 PDF 下载');
+    if (response.pdf?.note) {
+      setStatus(response.pdf.note);
+    } else {
+      setStatus('已触发 PDF 下载');
+    }
   } catch (error) {
     console.error(error);
     setStatus(error.message, true);
@@ -192,12 +221,22 @@ function renderClips() {
       });
       item.appendChild(selection);
 
-      const thumbnail = document.createElement('img');
-      thumbnail.src = clip.dataUrl;
-      thumbnail.alt = clip.title || `截图 ${index + 1}`;
-      thumbnail.classList.add('clip-thumbnail');
-      thumbnail.addEventListener('click', () => handlePreviewClip(clip.id));
-      item.appendChild(thumbnail);
+      if (clip.type === 'webpage') {
+        // 网页类型，显示一个文档图标或者文本标识
+        const webpageIcon = document.createElement('div');
+        webpageIcon.classList.add('clip-thumbnail', 'webpage-icon');
+        webpageIcon.innerHTML = '📄';
+        webpageIcon.title = '网页内容';
+        item.appendChild(webpageIcon);
+      } else {
+        // 截图类型，显示缩略图
+        const thumbnail = document.createElement('img');
+        thumbnail.src = clip.dataUrl;
+        thumbnail.alt = clip.title || `截图 ${index + 1}`;
+        thumbnail.classList.add('clip-thumbnail');
+        thumbnail.addEventListener('click', () => handlePreviewClip(clip.id));
+        item.appendChild(thumbnail);
+      }
 
       const meta = document.createElement('div');
       meta.className = 'clip-meta';
@@ -279,6 +318,10 @@ function handlePreviewClip(id) {
   const clip = state.clips.find((item) => item.id === id);
   if (!clip) {
     setStatus('找不到对应的截图', true);
+    return;
+  }
+  if (clip.type === 'webpage') {
+    setStatus('网页类型不支持预览', true);
     return;
   }
   openPreview(clip);
@@ -366,6 +409,9 @@ function setWorking(working) {
   startCaptureBtn.disabled = working;
   if (captureFullPageBtn) {
     captureFullPageBtn.disabled = working;
+  }
+  if (captureWebpageBtn) {
+    captureWebpageBtn.disabled = working;
   }
   generatePdfBtn.disabled = working;
   updateSelectionControls();
