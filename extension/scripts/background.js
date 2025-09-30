@@ -120,23 +120,50 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 async function capturePart(message, windowId) {
   const dataUrl = await chrome.tabs.captureVisibleTab(windowId, { format: 'png' });
-  const { part } = message;
+  const { rect, viewport, part } = message;
 
-  // 计算在视口中的实际裁剪区域
-  const viewportLeft = Math.max(0, message.rect.left - part.scrollX);
-  const viewportTop = Math.max(0, message.rect.top - part.scrollY);
-  const viewportWidth = Math.min(message.viewport.width - viewportLeft, part.width);
-  const viewportHeight = Math.min(message.viewport.height - viewportTop, part.height);
+  const viewportScrollX = viewport.scrollX || 0;
+  const viewportScrollY = viewport.scrollY || 0;
+  const viewportWidth = viewport.width;
+  const viewportHeight = viewport.height;
+
+  const selectionRight = rect.left + rect.width;
+  const selectionBottom = rect.top + rect.height;
+  const viewportRight = viewportScrollX + viewportWidth;
+  const viewportBottom = viewportScrollY + viewportHeight;
+
+  const intersectLeft = Math.max(rect.left, viewportScrollX);
+  const intersectTop = Math.max(rect.top, viewportScrollY);
+  const intersectRight = Math.min(selectionRight, viewportRight);
+  const intersectBottom = Math.min(selectionBottom, viewportBottom);
+
+  const viewportLeft = Math.max(0, intersectLeft - viewportScrollX);
+  const viewportTop = Math.max(0, intersectTop - viewportScrollY);
+  const offsetX = Math.max(0, intersectLeft - rect.left);
+  const offsetY = Math.max(0, intersectTop - rect.top);
+
+  let width = Math.max(0, intersectRight - intersectLeft);
+  let height = Math.max(0, intersectBottom - intersectTop);
+
+  if (Number.isFinite(part.width)) {
+    width = Math.min(width, part.width);
+  }
+  if (Number.isFinite(part.height)) {
+    height = Math.min(height, part.height);
+  }
+
+  width = Math.max(0, Math.min(width, rect.width - offsetX));
+  height = Math.max(0, Math.min(height, rect.height - offsetY));
 
   return {
     dataUrl,
-    offsetX: part.offsetX,
-    offsetY: part.offsetY,
+    offsetX,
+    offsetY,
     viewportLeft,
     viewportTop,
-    viewportWidth,
-    viewportHeight,
-    scale: message.viewport.dpr || 1
+    viewportWidth: width,
+    viewportHeight: height,
+    scale: viewport.dpr || 1
   };
 }
 
@@ -178,17 +205,32 @@ async function stitchScrollableScreenshots(message) {
     const blob = await response.blob();
     const bitmap = await createImageBitmap(blob);
 
+    if (!part.viewportWidth || !part.viewportHeight) {
+      continue;
+    }
+
     // 计算源区域和目标区域
-    const sx = Math.round(part.viewportLeft * dpr);
-    const sy = Math.round(part.viewportTop * dpr);
+    const sx = Math.max(0, Math.round(part.viewportLeft * dpr));
+    const sy = Math.max(0, Math.round(part.viewportTop * dpr));
     const sw = Math.round(part.viewportWidth * dpr);
     const sh = Math.round(part.viewportHeight * dpr);
 
-    const dx = Math.round(part.offsetX * dpr);
-    const dy = Math.round(part.offsetY * dpr);
+    if (sw <= 0 || sh <= 0) {
+      continue;
+    }
+
+    const clampedSw = Math.max(0, Math.min(sw, bitmap.width - sx));
+    const clampedSh = Math.max(0, Math.min(sh, bitmap.height - sy));
+
+    if (clampedSw <= 0 || clampedSh <= 0) {
+      continue;
+    }
+
+    const dx = Math.max(0, Math.round(part.offsetX * dpr));
+    const dy = Math.max(0, Math.round(part.offsetY * dpr));
 
     // 绘制到画布上
-    ctx.drawImage(bitmap, sx, sy, sw, sh, dx, dy, sw, sh);
+    ctx.drawImage(bitmap, sx, sy, clampedSw, clampedSh, dx, dy, clampedSw, clampedSh);
   }
 
   // 转换为 PNG
@@ -217,17 +259,32 @@ async function stitchAndSaveScreenshots(message) {
     const blob = await response.blob();
     const bitmap = await createImageBitmap(blob);
 
+    if (!part.viewportWidth || !part.viewportHeight) {
+      continue;
+    }
+
     // 计算源区域和目标区域
-    const sx = Math.round(part.viewportLeft * dpr);
-    const sy = Math.round(part.viewportTop * dpr);
+    const sx = Math.max(0, Math.round(part.viewportLeft * dpr));
+    const sy = Math.max(0, Math.round(part.viewportTop * dpr));
     const sw = Math.round(part.viewportWidth * dpr);
     const sh = Math.round(part.viewportHeight * dpr);
 
-    const dx = Math.round(part.offsetX * dpr);
-    const dy = Math.round(part.offsetY * dpr);
+    if (sw <= 0 || sh <= 0) {
+      continue;
+    }
+
+    const clampedSw = Math.max(0, Math.min(sw, bitmap.width - sx));
+    const clampedSh = Math.max(0, Math.min(sh, bitmap.height - sy));
+
+    if (clampedSw <= 0 || clampedSh <= 0) {
+      continue;
+    }
+
+    const dx = Math.max(0, Math.round(part.offsetX * dpr));
+    const dy = Math.max(0, Math.round(part.offsetY * dpr));
 
     // 绘制到画布上
-    ctx.drawImage(bitmap, sx, sy, sw, sh, dx, dy, sw, sh);
+    ctx.drawImage(bitmap, sx, sy, clampedSw, clampedSh, dx, dy, clampedSw, clampedSh);
   }
 
   // 转换为 PNG
