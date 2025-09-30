@@ -306,29 +306,102 @@ async function persistClip(dataUrl, title, url) {
     dataUrl
   };
 
-  clips.push(clip);
-  await chrome.storage.local.set({ clips, clipCounter: nextCounter });
-
-  await chrome.downloads.download({
+  const downloadId = await chrome.downloads.download({
     url: dataUrl,
     filename: `${CLIP_DOWNLOAD_FOLDER}/${filename}`,
     saveAs: false,
     conflictAction: 'uniquify'
   });
 
+  clip.downloadId = downloadId;
+
+  clips.push(clip);
+  await chrome.storage.local.set({ clips, clipCounter: nextCounter });
+
   return clip;
 }
 
 async function removeClip(id) {
   const { clips = [] } = await chrome.storage.local.get({ clips: [] });
+  const removed = clips.find((clip) => clip.id === id);
   const updated = clips.filter((clip) => clip.id !== id);
   await chrome.storage.local.set({ clips: updated });
   chrome.runtime.sendMessage({ type: 'CLIPS_UPDATED', clips: updated });
+  await cleanupClipDownloads([removed]);
 }
 
 async function clearClips() {
+  const { clips = [] } = await chrome.storage.local.get({ clips: [], clipCounter: 0 });
   await chrome.storage.local.set({ clips: [], clipCounter: 0 });
   chrome.runtime.sendMessage({ type: 'CLIPS_UPDATED', clips: [] });
+  await cleanupClipDownloads(clips);
+}
+
+async function cleanupClipDownloads(clips) {
+  if (!Array.isArray(clips) || clips.length === 0) {
+    return;
+  }
+
+  await Promise.all(
+    clips.map(async (clip) => {
+      if (!clip) {
+        return;
+      }
+
+      let downloadId = typeof clip.downloadId === 'number' ? clip.downloadId : null;
+
+      if (downloadId === null) {
+        downloadId = await findDownloadIdByFilename(clip.filename).catch((error) => {
+          console.warn('Failed to locate download by filename', clip?.filename, error);
+          return null;
+        });
+      }
+
+      if (downloadId === null) {
+        return;
+      }
+
+      try {
+        await chrome.downloads.removeFile(downloadId);
+      } catch (error) {
+        console.warn('Failed to remove downloaded file', downloadId, error);
+      }
+      try {
+        await chrome.downloads.erase({ id: downloadId });
+      } catch (error) {
+        console.warn('Failed to erase download history', downloadId, error);
+      }
+    })
+  );
+}
+
+async function findDownloadIdByFilename(filename) {
+  if (!filename) {
+    return null;
+  }
+
+  const baseName = filename.replace(/\.[^.]+$/, '');
+  const escapedFolder = escapeRegex(CLIP_DOWNLOAD_FOLDER);
+  const escapedBase = escapeRegex(baseName);
+  const escapedExt = escapeRegex(filename.split('.').pop() || '');
+  const regex = `${escapedFolder}[\\\\/].*${escapedBase}.*\\.${escapedExt}$`;
+
+  const results = await chrome.downloads.search({ filenameRegex: regex });
+  if (!Array.isArray(results) || results.length === 0) {
+    return null;
+  }
+
+  results.sort((a, b) => {
+    const timeA = Date.parse(a.startTime || '') || 0;
+    const timeB = Date.parse(b.startTime || '') || 0;
+    return timeB - timeA;
+  });
+
+  return results[0]?.id ?? null;
+}
+
+function escapeRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 async function generatePdf(clipIds) {
