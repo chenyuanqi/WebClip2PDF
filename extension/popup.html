@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>WebClip2PDF</title>
+    <link rel="stylesheet" href="styles/popup.css" />
+  </head>
+  <body>
+    <header class="toolbar">
+      <button id="startCapture" class="primary">开始截取</button>
+      <button id="generatePdf" class="primary">生成 PDF</button>
+      <button id="clearClips" class="muted">清空</button>
+    </header>
+    <section id="status" class="status" role="status" aria-live="polite"></section>
+    <main id="clipList" class="clip-list"></main>
+    <script type="module" src="scripts/popup.js"></script>
+  </body>
+</html>

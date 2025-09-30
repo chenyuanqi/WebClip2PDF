@@ -1,0 +1,150 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  width: 420px;
+  min-height: 560px;
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: #f5f5f7;
+  color: #1c1c1e;
+}
+
+.toolbar {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  background: #ffffff;
+  position: sticky;
+  top: 0;
+  border-bottom: 1px solid #e5e5ea;
+  z-index: 1;
+}
+
+.toolbar button {
+  flex: 1;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+button.primary {
+  background: #007aff;
+  color: white;
+}
+
+button.primary:disabled {
+  background: #aacbff;
+  cursor: not-allowed;
+}
+
+button.muted {
+  background: #e5e5ea;
+  color: #3a3a3c;
+}
+
+.status {
+  min-height: 24px;
+  padding: 0 12px;
+  font-size: 13px;
+  color: #3a3a3c;
+}
+
+.clip-list {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.clip-item {
+  display: grid;
+  grid-template-columns: auto 80px 1fr auto;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.1);
+  align-items: center;
+}
+
+.clip-item img {
+  width: 80px;
+  height: 80px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid #d1d1d6;
+}
+
+.clip-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.clip-meta .title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1c1c1e;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clip-meta .title[title] {
+  cursor: help;
+}
+
+.clip-meta .detail {
+  font-size: 12px;
+  color: #636366;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clip-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.clip-actions button {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  font-size: 18px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  background: #f5f5f7;
+  color: #8e8e93;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.clip-actions button:hover {
+  background: #e5e5ea;
+  color: #636366;
+}
+
+.clip-select {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.empty-state {
+  padding: 24px;
+  text-align: center;
+  font-size: 13px;
+  color: #8e8e93;
+}

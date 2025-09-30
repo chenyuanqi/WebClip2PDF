@@ -1,0 +1,16 @@
+.webclip2pdf-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483646;
+  cursor: crosshair;
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.webclip2pdf-selection-box {
+  position: absolute;
+  border: 2px solid #007aff;
+  background: rgba(0, 122, 255, 0.2);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.6);
+  z-index: 2147483647;
+  pointer-events: none;
+}
