@@ -6,6 +6,7 @@
   let startY = 0;
   let currentRect = null;
   let autoScrollInterval = null;
+  let isCapturingFullPage = false;
 
   const onMouseDown = (event) => {
     if (!overlay || event.button !== 0) {
@@ -116,6 +117,81 @@
     chrome.runtime.sendMessage({ type: 'SELECTION_CANCELLED' });
   };
 
+  const captureWindowRect = async (rect, dpr) => {
+    const { left, top, width, height } = rect;
+
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+      return [];
+    }
+
+    const viewportHeight = Math.max(1, window.innerHeight);
+    const viewportWidth = Math.max(1, window.innerWidth);
+    const maxX = left + width;
+    const maxY = top + height;
+    const screenshots = [];
+
+    let currentY = top;
+    while (currentY < maxY) {
+      let currentX = left;
+      while (currentX < maxX) {
+        const partWidth = Math.max(0, Math.min(viewportWidth, maxX - currentX));
+        const partHeight = Math.max(0, Math.min(viewportHeight, maxY - currentY));
+        if (partWidth > 0 && partHeight > 0) {
+          screenshots.push({
+            scrollX: currentX,
+            scrollY: currentY,
+            offsetX: currentX - left,
+            offsetY: currentY - top,
+            width: partWidth,
+            height: partHeight
+          });
+        }
+        currentX += viewportWidth;
+      }
+      currentY += viewportHeight;
+    }
+
+    const originalScrollX = window.scrollX;
+    const originalScrollY = window.scrollY;
+    const capturedParts = [];
+
+    try {
+      for (const shot of screenshots) {
+        window.scrollTo(shot.scrollX, shot.scrollY);
+
+        await new Promise((resolve) => setTimeout(resolve, 150));
+
+        const response = await chrome.runtime.sendMessage({
+          type: 'CAPTURE_PART',
+          rect,
+          part: {
+            scrollX: window.scrollX,
+            scrollY: window.scrollY,
+            offsetX: shot.offsetX,
+            offsetY: shot.offsetY,
+            width: shot.width,
+            height: shot.height
+          },
+          viewport: {
+            width: window.innerWidth,
+            height: window.innerHeight,
+            scrollX: window.scrollX,
+            scrollY: window.scrollY,
+            dpr
+          }
+        });
+
+        if (response && response.dataUrl) {
+          capturedParts.push(response);
+        }
+      }
+    } finally {
+      window.scrollTo(originalScrollX, originalScrollY);
+    }
+
+    return capturedParts;
+  };
+
   const finishSelection = async () => {
     if (!currentRect) {
       cancelSelection();
@@ -123,91 +199,25 @@
     }
 
     const { left, top, width, height } = currentRect;
+    const rect = { left, top, width, height };
     const dpr = window.devicePixelRatio || 1;
 
     // 检测选择区域内的可滚动容器
     const scrollableContainer = findScrollableContainer(left, top, width, height);
 
     if (scrollableContainer && scrollableContainer !== document.documentElement && scrollableContainer !== document.body) {
-      // 如果找到内部可滚动容器，使用特殊处理
-      await captureScrollableElement(scrollableContainer, currentRect, dpr);
+      await captureScrollableElement(scrollableContainer, rect, dpr);
       removeOverlay();
       return;
     }
 
-    // 保存当前滚动位置
-    const originalScrollX = window.scrollX;
-    const originalScrollY = window.scrollY;
-
-    // 先移除 overlay 和选择框
     removeOverlay();
 
-    // 计算需要截取的段数
-    const viewportHeight = window.innerHeight;
-    const viewportWidth = window.innerWidth;
+    const capturedParts = await captureWindowRect(rect, dpr);
 
-    // 计算需要的截图区域
-    const screenshots = [];
-    let currentY = top;
-
-    while (currentY < top + height) {
-      let currentX = left;
-      while (currentX < left + width) {
-        screenshots.push({
-          scrollX: currentX,
-          scrollY: currentY,
-          offsetX: currentX - left,
-          offsetY: currentY - top,
-          width: Math.min(viewportWidth, left + width - currentX),
-          height: Math.min(viewportHeight, top + height - currentY)
-        });
-        currentX += viewportWidth;
-      }
-      currentY += viewportHeight;
-    }
-
-    // 依次截取每个部分
-    const capturedParts = [];
-    for (const shot of screenshots) {
-      // 滚动到指定位置
-      window.scrollTo(shot.scrollX, shot.scrollY);
-
-      // 等待滚动完成
-      await new Promise(resolve => setTimeout(resolve, 150));
-
-      // 发送截图请求
-      const response = await chrome.runtime.sendMessage({
-        type: 'CAPTURE_PART',
-        rect: { left, top, width, height },
-        part: {
-          scrollX: window.scrollX,
-          scrollY: window.scrollY,
-          offsetX: shot.offsetX,
-          offsetY: shot.offsetY,
-          width: shot.width,
-          height: shot.height
-        },
-        viewport: {
-          width: window.innerWidth,
-          height: window.innerHeight,
-          scrollX: window.scrollX,
-          scrollY: window.scrollY,
-          dpr
-        }
-      });
-
-      if (response && response.dataUrl) {
-        capturedParts.push(response);
-      }
-    }
-
-    // 恢复原始滚动位置
-    window.scrollTo(originalScrollX, originalScrollY);
-
-    // 发送所有截图部分进行拼接
     chrome.runtime.sendMessage({
       type: 'STITCH_SCREENSHOTS',
-      rect: { left, top, width, height },
+      rect,
       parts: capturedParts,
       url: window.location.href,
       title: document.title,
@@ -372,6 +382,64 @@
     });
   };
 
+  const captureFullPage = async () => {
+    if (isCapturingFullPage) {
+      return;
+    }
+    isCapturingFullPage = true;
+    stopAutoScroll();
+
+    const dpr = window.devicePixelRatio || 1;
+
+    try {
+      removeOverlay();
+
+      const doc = document.documentElement;
+      const body = document.body;
+      const totalWidth = Math.max(
+        doc.scrollWidth,
+        doc.offsetWidth,
+        body ? body.scrollWidth : 0,
+        body ? body.offsetWidth : 0,
+        window.innerWidth
+      );
+      const totalHeight = Math.max(
+        doc.scrollHeight,
+        doc.offsetHeight,
+        body ? body.scrollHeight : 0,
+        body ? body.offsetHeight : 0,
+        window.innerHeight
+      );
+
+      if (!Number.isFinite(totalWidth) || !Number.isFinite(totalHeight) || totalWidth <= 0 || totalHeight <= 0) {
+        console.warn('Full page capture skipped due to invalid dimensions.', totalWidth, totalHeight);
+        return;
+      }
+
+      const rect = {
+        left: 0,
+        top: 0,
+        width: totalWidth,
+        height: totalHeight
+      };
+
+      const parts = await captureWindowRect(rect, dpr);
+
+      chrome.runtime.sendMessage({
+        type: 'STITCH_SCREENSHOTS',
+        rect,
+        parts,
+        url: window.location.href,
+        title: document.title,
+        dpr
+      });
+    } catch (error) {
+      console.error('Failed to capture full page.', error);
+    } finally {
+      isCapturingFullPage = false;
+    }
+  };
+
   chrome.runtime.onMessage.addListener((message) => {
     if (!message || !message.type) {
       return;
@@ -384,6 +452,9 @@
     }
     if (message.type === 'CANCEL_SELECTION') {
       cancelSelection();
+    }
+    if (message.type === 'CAPTURE_FULL_PAGE') {
+      captureFullPage();
     }
   });
 })();

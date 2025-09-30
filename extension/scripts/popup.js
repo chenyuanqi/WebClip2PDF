@@ -1,6 +1,10 @@
 const startCaptureBtn = document.getElementById('startCapture');
+const captureFullPageBtn = document.getElementById('captureFullPage');
 const generatePdfBtn = document.getElementById('generatePdf');
 const clearClipsBtn = document.getElementById('clearClips');
+const selectAllClipsBtn = document.getElementById('selectAllClips');
+const deselectAllClipsBtn = document.getElementById('deselectAllClips');
+const clipToolbarEl = document.querySelector('.clip-toolbar');
 const statusEl = document.getElementById('status');
 const clipListEl = document.getElementById('clipList');
 const previewOverlayEl = document.getElementById('previewOverlay');
@@ -12,12 +16,22 @@ const previewCloseBtn = document.getElementById('previewClose');
 const state = {
   clips: [],
   selected: new Set(),
-  previewingId: null
+  previewingId: null,
+  working: false
 };
 
 startCaptureBtn.addEventListener('click', handleStartCapture);
+if (captureFullPageBtn) {
+  captureFullPageBtn.addEventListener('click', handleCaptureFullPage);
+}
 generatePdfBtn.addEventListener('click', handleGeneratePdf);
 clearClipsBtn.addEventListener('click', handleClearClips);
+if (selectAllClipsBtn) {
+  selectAllClipsBtn.addEventListener('click', handleSelectAllClips);
+}
+if (deselectAllClipsBtn) {
+  deselectAllClipsBtn.addEventListener('click', handleDeselectAllClips);
+}
 
 chrome.runtime.onMessage.addListener((message) => {
   if (!message || !message.type) {
@@ -83,6 +97,19 @@ async function handleStartCapture() {
   window.close();
 }
 
+async function handleCaptureFullPage() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id) {
+    setStatus('无法获取当前标签页', true);
+    return;
+  }
+  await chrome.tabs.sendMessage(tab.id, { type: 'CAPTURE_FULL_PAGE' }).catch((error) => {
+    console.error(error);
+    setStatus('无法执行整页截取，请检查权限', true);
+  });
+  window.close();
+}
+
 async function handleGeneratePdf() {
   if (!state.selected.size) {
     setStatus('请至少选择一张截图', true);
@@ -140,6 +167,7 @@ function renderClips() {
     empty.className = 'empty-state';
     empty.textContent = '暂时没有截图，可以点击“开始截取”来添加。';
     clipListEl.appendChild(empty);
+    updateSelectionControls();
     return;
   }
 
@@ -160,6 +188,7 @@ function renderClips() {
         } else {
           state.selected.delete(clip.id);
         }
+        updateSelectionControls();
       });
       item.appendChild(selection);
 
@@ -206,6 +235,22 @@ function renderClips() {
 
       clipListEl.appendChild(item);
     });
+
+  updateSelectionControls();
+}
+
+function handleSelectAllClips() {
+  state.clips.forEach((clip) => {
+    state.selected.add(clip.id);
+  });
+  renderClips();
+  setStatus(`已全选 ${state.selected.size} 张截图`);
+}
+
+function handleDeselectAllClips() {
+  state.selected.clear();
+  renderClips();
+  setStatus('已取消所有截图的选择');
 }
 
 async function handleRemoveClip(id) {
@@ -317,7 +362,37 @@ function setStatus(message, isError = false) {
 }
 
 function setWorking(working) {
+  state.working = working;
   startCaptureBtn.disabled = working;
+  if (captureFullPageBtn) {
+    captureFullPageBtn.disabled = working;
+  }
   generatePdfBtn.disabled = working;
-  clearClipsBtn.disabled = working;
+  updateSelectionControls();
+}
+
+function updateSelectionControls() {
+  const hasClips = state.clips.length > 0;
+  const allSelected = hasClips && state.selected.size === state.clips.length;
+  const noneSelected = state.selected.size === 0;
+
+  if (clipToolbarEl) {
+    clipToolbarEl.hidden = !hasClips;
+  }
+
+  if (clearClipsBtn) {
+    clearClipsBtn.disabled = state.working || !hasClips;
+  }
+
+  if (selectAllClipsBtn) {
+    selectAllClipsBtn.disabled = state.working || !hasClips || allSelected;
+  }
+
+  if (deselectAllClipsBtn) {
+    deselectAllClipsBtn.disabled = state.working || noneSelected;
+  }
+
+  if (generatePdfBtn) {
+    generatePdfBtn.disabled = state.working || noneSelected;
+  }
 }

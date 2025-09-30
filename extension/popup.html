@@ -7,12 +7,31 @@
   </head>
   <body>
     <header class="toolbar">
-      <button id="startCapture" class="primary">开始截取</button>
-      <button id="generatePdf" class="primary">生成 PDF</button>
-      <button id="clearClips" class="muted">清空</button>
+      <div class="toolbar-group">
+        <span class="toolbar-label">截图模式</span>
+        <div class="toolbar-actions">
+          <button id="startCapture" class="primary">自定义截取</button>
+          <button id="captureFullPage" class="primary subtle">截取整页</button>
+        </div>
+      </div>
+      <div class="toolbar-group">
+        <span class="toolbar-label">导出</span>
+        <div class="toolbar-actions">
+          <button id="generatePdf" class="accent">生成 PDF</button>
+        </div>
+      </div>
     </header>
     <section id="status" class="status" role="status" aria-live="polite"></section>
-    <main id="clipList" class="clip-list"></main>
+    <main class="clip-area">
+      <div class="clip-toolbar" role="group" aria-label="截图选择" hidden>
+        <div class="clip-selectors">
+          <button id="selectAllClips" class="tertiary">全选</button>
+          <button id="deselectAllClips" class="tertiary">全不选</button>
+        </div>
+        <button id="clearClips" class="muted">清空</button>
+      </div>
+      <div id="clipList" class="clip-list"></div>
+    </main>
     <div id="previewOverlay" class="preview-overlay" hidden>
       <div class="preview-backdrop" data-preview-dismiss></div>
       <div class="preview-panel" role="dialog" aria-modal="true" aria-labelledby="previewTitle">
