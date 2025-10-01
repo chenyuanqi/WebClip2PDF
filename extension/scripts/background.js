@@ -605,7 +605,7 @@ async function generatePdf(clipIds) {
 }
 
 async function generateWebpagePdf(webpageClips) {
-  // 创建一个新标签页来渲染网页内容
+  // 创建合并的 HTML 内容
   const combinedHtml = `
 <!DOCTYPE html>
 <html>
@@ -621,25 +621,68 @@ async function generateWebpagePdf(webpageClips) {
       margin: 0;
       padding: 20px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f5f5f7;
+    }
+    .clip-page {
+      background: white;
+      padding: 30px;
+      margin-bottom: 40px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     }
     .page-break {
       page-break-after: always;
       margin: 40px 0;
       border-bottom: 2px dashed #ccc;
     }
+    .print-header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 20px;
+      margin: -20px -20px 20px -20px;
+      border-radius: 8px 8px 0 0;
+    }
+    .print-instruction {
+      background: #fff3cd;
+      border: 2px solid #ffc107;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      font-size: 14px;
+      color: #856404;
+    }
+    @media print {
+      body {
+        background: white;
+      }
+      .print-instruction {
+        display: none;
+      }
+      .clip-page {
+        box-shadow: none;
+        page-break-after: always;
+      }
+    }
   </style>
 </head>
 <body>
+  <div class="print-instruction">
+    📄 <strong>提示：</strong>按 <kbd>Ctrl+P</kbd> (Windows) 或 <kbd>Cmd+P</kbd> (Mac) 打开打印对话框，选择"另存为 PDF"即可保存为 PDF 文件。
+  </div>
 ${webpageClips.map((clip, index) => `
   <div class="clip-page">
-    <h2 style="color: #333; border-bottom: 2px solid #0a84ff; padding-bottom: 8px; margin-bottom: 16px;">
-      ${clip.title || 'Saved Webpage'}
-    </h2>
-    <div style="color: #666; font-size: 12px; margin-bottom: 20px;">
-      URL: ${clip.url}<br>
-      保存时间: ${new Date(clip.createdAt).toLocaleString('zh-CN')}
+    <div class="print-header">
+      <h2 style="margin: 0; font-size: 20px;">
+        ${clip.title || 'Saved Webpage'}
+      </h2>
+      <div style="font-size: 12px; margin-top: 8px; opacity: 0.9;">
+        URL: ${clip.url}<br>
+        保存时间: ${new Date(clip.createdAt).toLocaleString('zh-CN')}
+      </div>
     </div>
-    ${clip.htmlContent || ''}
+    <div style="margin-top: 20px;">
+      ${clip.htmlContent || ''}
+    </div>
   </div>
   ${index < webpageClips.length - 1 ? '<div class="page-break"></div>' : ''}
 `).join('\n')}
@@ -649,59 +692,25 @@ ${webpageClips.map((clip, index) => `
   const htmlBlob = new Blob([combinedHtml], { type: 'text/html' });
   const htmlDataUrl = await blobToDataUrl(htmlBlob);
 
-  // 创建一个临时标签页来打印
-  const tab = await chrome.tabs.create({ url: htmlDataUrl, active: false });
+  const indexLabel = String(Date.now());
+  const filename = `WebClip-${indexLabel}.html`;
 
-  // 等待页面加载完成
-  await new Promise(resolve => {
-    const listener = (tabId, changeInfo) => {
-      if (tabId === tab.id && changeInfo.status === 'complete') {
-        chrome.tabs.onUpdated.removeListener(listener);
-        resolve();
-      }
-    };
-    chrome.tabs.onUpdated.addListener(listener);
+  // 下载 HTML 文件
+  await chrome.downloads.download({
+    url: htmlDataUrl,
+    filename: `${CLIP_DOWNLOAD_FOLDER}/${filename}`,
+    saveAs: false,
+    conflictAction: 'uniquify'
   });
 
-  // 等待额外的时间确保内容渲染完成
-  await new Promise(resolve => setTimeout(resolve, 1000));
+  // 在新标签页中打开，方便用户直接打印
+  await chrome.tabs.create({ url: htmlDataUrl, active: true });
 
-  const indexLabel = String(Date.now());
-  const filename = `WebClip-${indexLabel}.pdf`;
-
-  try {
-    // 使用 Chrome 的打印 API 生成 PDF
-    const pdfData = await chrome.tabs.printToPDF(tab.id, {
-      paperWidth: 8.27,  // A4 宽度（英寸）
-      paperHeight: 11.69, // A4 高度（英寸）
-      marginTop: 0.4,
-      marginBottom: 0.4,
-      marginLeft: 0.4,
-      marginRight: 0.4,
-      printBackground: true,
-      preferCSSPageSize: false
-    });
-
-    // 将 ArrayBuffer 转换为 Data URL
-    const pdfBase64 = arrayBufferToDataUrl(pdfData, 'application/pdf');
-
-    // 下载 PDF
-    await chrome.downloads.download({
-      url: pdfBase64,
-      filename: `${CLIP_DOWNLOAD_FOLDER}/${filename}`,
-      saveAs: true,
-      conflictAction: 'uniquify'
-    });
-
-    // 关闭临时标签页
-    await chrome.tabs.remove(tab.id);
-
-    return { filename, url: pdfBase64 };
-  } catch (error) {
-    // 出错时也要关闭标签页
-    await chrome.tabs.remove(tab.id).catch(() => {});
-    throw error;
-  }
+  return {
+    filename,
+    url: htmlDataUrl,
+    note: '网页已在新标签页打开，请按 Ctrl+P (Cmd+P) 打印为 PDF'
+  };
 }
 
 async function createPdf(clips) {
