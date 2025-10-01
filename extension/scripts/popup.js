@@ -263,10 +263,19 @@ function renderClips() {
       const actions = document.createElement('div');
       actions.className = 'clip-actions';
 
+      const editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.innerHTML = '✏️';
+      editBtn.title = '编辑标题';
+      editBtn.className = 'edit-btn';
+      editBtn.addEventListener('click', () => handleEditClip(clip.id));
+      actions.appendChild(editBtn);
+
       const removeBtn = document.createElement('button');
       removeBtn.type = 'button';
       removeBtn.innerHTML = '🗑️';
       removeBtn.title = '删除';
+      removeBtn.className = 'remove-btn';
       removeBtn.addEventListener('click', () => handleRemoveClip(clip.id));
       actions.appendChild(removeBtn);
 
@@ -291,6 +300,52 @@ function handleDeselectAllClips() {
   state.selected.clear();
   renderClips();
   setStatus('已取消所有截图的选择');
+}
+
+async function handleEditClip(id) {
+  const clip = state.clips.find((item) => item.id === id);
+  if (!clip) {
+    setStatus('找不到对应的截图', true);
+    return;
+  }
+
+  const currentTitle = clip.title || clip.filename;
+  const newTitle = prompt('请输入新的标题/文件名：', currentTitle);
+
+  if (newTitle === null || newTitle.trim() === '') {
+    return;
+  }
+
+  const trimmedTitle = newTitle.trim();
+  if (trimmedTitle === currentTitle) {
+    return;
+  }
+
+  setWorking(true);
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: 'UPDATE_CLIP_TITLE',
+      id,
+      title: trimmedTitle
+    });
+    if (!response?.success) {
+      throw new Error(response?.error || '更新标题失败');
+    }
+
+    // 更新本地状态
+    const clipIndex = state.clips.findIndex((item) => item.id === id);
+    if (clipIndex !== -1) {
+      state.clips[clipIndex].title = trimmedTitle;
+    }
+
+    renderClips();
+    setStatus('标题已更新');
+  } catch (error) {
+    console.error(error);
+    setStatus(error.message, true);
+  } finally {
+    setWorking(false);
+  }
 }
 
 async function handleRemoveClip(id) {

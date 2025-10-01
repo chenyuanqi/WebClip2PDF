@@ -123,6 +123,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .catch((error) => sendResponse({ success: false, error: error.message || String(error) }));
     return true;
   }
+
+  if (message.type === 'UPDATE_CLIP_TITLE') {
+    updateClipTitle(message.id, message.title)
+      .then(() => sendResponse({ success: true }))
+      .catch((error) => sendResponse({ success: false, error: error.message || String(error) }));
+    return true;
+  }
 });
 
 async function capturePart(message, windowId) {
@@ -488,6 +495,52 @@ async function createThumbnail(dataUrl, maxWidth, maxHeight) {
   }
 }
 
+async function updateClipTitle(id, newTitle) {
+  const { clips = [] } = await chrome.storage.local.get({ clips: [] });
+  const clipIndex = clips.findIndex((clip) => clip.id === id);
+
+  if (clipIndex === -1) {
+    throw new Error('找不到对应的截图');
+  }
+
+  const clip = clips[clipIndex];
+  const oldFilename = clip.filename;
+
+  // 清理新标题中的非法字符
+  const sanitizedTitle = newTitle.replace(/[<>:"/\\|?*]/g, '-').substring(0, 100);
+
+  // 提取原文件名的序号部分
+  const match = oldFilename.match(/-(\d{3})\.(\w+)$/);
+  const indexLabel = match ? match[1] : '001';
+  const extension = match ? match[2] : 'png';
+
+  // 生成新文件名
+  const newFilename = `${sanitizedTitle}-${indexLabel}.${extension}`;
+
+  // 更新clip信息
+  clips[clipIndex].title = newTitle;
+  clips[clipIndex].filename = newFilename;
+
+  await chrome.storage.local.set({ clips });
+  chrome.runtime.sendMessage({ type: 'CLIPS_UPDATED', clips });
+
+  // 如果有downloadId，尝试重命名文件
+  if (clip.downloadId) {
+    try {
+      const downloads = await chrome.downloads.search({ id: clip.downloadId });
+      if (downloads.length > 0 && downloads[0].filename) {
+        // Chrome下载API不支持重命名，只能在用户下次下载时使用新文件名
+        // 这里我们只更新记录，文件名在下次生成PDF时会使用新的
+        console.log(`文件名已更新: ${oldFilename} -> ${newFilename}`);
+      }
+    } catch (error) {
+      console.warn('无法重命名已下载文件:', error);
+    }
+  }
+
+  return clips[clipIndex];
+}
+
 async function removeClip(id) {
   const { clips = [] } = await chrome.storage.local.get({ clips: [] });
   const removed = clips.find((clip) => clip.id === id);
@@ -677,30 +730,38 @@ async function generatePdf(clipIds) {
   const imageClips = selected.filter(clip => clip.type !== 'webpage');
   const webpageClips = selected.filter(clip => clip.type === 'webpage');
 
+  // 生成PDF文件名：使用第一个clip的标题或文件名
+  const firstClip = selected[0];
+  const baseName = (firstClip.title || firstClip.filename || 'WebClip')
+    .replace(/[<>:"/\\|?*]/g, '-')
+    .replace(/-\d{3}\.\w+$/, '') // 移除文件扩展名和序号
+    .substring(0, 100);
+
+  const indexLabel = String(Date.now());
+  const pdfFilename = `${baseName}-${indexLabel}.pdf`;
+
   if (webpageClips.length > 0 && imageClips.length === 0) {
     // 仅网页类型，使用浏览器的打印功能生成 PDF
-    return await generateWebpagePdf(webpageClips);
+    return await generateWebpagePdf(webpageClips, pdfFilename);
   } else if (imageClips.length > 0) {
     // 有截图类型，使用原有的图片 PDF 生成方式
     const pdfBuffer = await createPdf(imageClips);
     const base64Pdf = arrayBufferToDataUrl(pdfBuffer, 'application/pdf');
 
-    const indexLabel = String(Date.now());
-    const filename = `WebClip-${indexLabel}.pdf`;
     await chrome.downloads.download({
       url: base64Pdf,
-      filename: `${CLIP_DOWNLOAD_FOLDER}/${filename}`,
+      filename: `${CLIP_DOWNLOAD_FOLDER}/${pdfFilename}`,
       saveAs: true,
       conflictAction: 'uniquify'
     });
 
-    return { filename, url: base64Pdf };
+    return { filename: pdfFilename, url: base64Pdf };
   } else {
     throw new Error('没有可用的内容');
   }
 }
 
-async function generateWebpagePdf(webpageClips) {
+async function generateWebpagePdf(webpageClips, pdfFilename) {
   // 创建合并的 HTML 内容
   const combinedHtml = `
 <!DOCTYPE html>
@@ -788,13 +849,13 @@ ${webpageClips.map((clip, index) => `
   const htmlBlob = new Blob([combinedHtml], { type: 'text/html' });
   const htmlDataUrl = await blobToDataUrl(htmlBlob);
 
-  const indexLabel = String(Date.now());
-  const filename = `WebClip-${indexLabel}.html`;
+  // 使用传入的 PDF 文件名生成 HTML 文件名
+  const htmlFilename = pdfFilename.replace(/\.pdf$/, '.html');
 
   // 下载 HTML 文件
   await chrome.downloads.download({
     url: htmlDataUrl,
-    filename: `${CLIP_DOWNLOAD_FOLDER}/${filename}`,
+    filename: `${CLIP_DOWNLOAD_FOLDER}/${htmlFilename}`,
     saveAs: false,
     conflictAction: 'uniquify'
   });
@@ -803,7 +864,7 @@ ${webpageClips.map((clip, index) => `
   await chrome.tabs.create({ url: htmlDataUrl, active: true });
 
   return {
-    filename,
+    filename: htmlFilename,
     url: htmlDataUrl,
     note: '网页已在新标签页打开，请按 Ctrl+P (Cmd+P) 打印为 PDF'
   };
@@ -811,10 +872,102 @@ ${webpageClips.map((clip, index) => `
 
 async function createPdf(clips) {
   const images = [];
+
+  // 创建目录页
+  const tocImage = await createTableOfContents(clips);
+  images.push(tocImage);
+
+  // 添加所有截图
   for (let index = 0; index < clips.length; index += 1) {
     images.push(await clipToPdfImage(clips[index], index));
   }
   return buildPdfDocument(images);
+}
+
+async function createTableOfContents(clips) {
+  // 创建目录页图片
+  const width = 595; // A4 width in points
+  const height = 842; // A4 height in points
+
+  const canvas = new OffscreenCanvas(width, height);
+  const ctx = canvas.getContext('2d');
+
+  // 白色背景
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, width, height);
+
+  // 渐变标题背景
+  const gradient = ctx.createLinearGradient(0, 0, width, 100);
+  gradient.addColorStop(0, '#667eea');
+  gradient.addColorStop(1, '#764ba2');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, width, 100);
+
+  // 标题
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 32px -apple-system, BlinkMacSystemFont, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('目录 / Table of Contents', width / 2, 60);
+
+  // 列表
+  ctx.fillStyle = '#1c1c1e';
+  ctx.font = '16px -apple-system, BlinkMacSystemFont, sans-serif';
+  ctx.textAlign = 'left';
+
+  let y = 150;
+  const lineHeight = 30;
+  const maxLines = Math.floor((height - 200) / lineHeight);
+
+  clips.slice(0, maxLines).forEach((clip, index) => {
+    const title = clip.title || clip.filename || `截图 ${index + 1}`;
+    const pageNum = index + 2; // +1 for 0-index, +1 for TOC page
+
+    // 序号
+    ctx.fillStyle = '#667eea';
+    ctx.font = 'bold 16px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillText(`${index + 1}.`, 50, y);
+
+    // 标题（截断过长的标题）
+    ctx.fillStyle = '#1c1c1e';
+    ctx.font = '16px -apple-system, BlinkMacSystemFont, sans-serif';
+    const maxWidth = width - 200;
+    let displayTitle = title;
+    const metrics = ctx.measureText(displayTitle);
+    if (metrics.width > maxWidth) {
+      while (ctx.measureText(displayTitle + '...').width > maxWidth && displayTitle.length > 0) {
+        displayTitle = displayTitle.slice(0, -1);
+      }
+      displayTitle += '...';
+    }
+    ctx.fillText(displayTitle, 90, y);
+
+    // 页码
+    ctx.fillStyle = '#636366';
+    ctx.font = '14px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(`第 ${pageNum} 页`, width - 50, y);
+    ctx.textAlign = 'left';
+
+    y += lineHeight;
+  });
+
+  // 如果clips太多，显示省略提示
+  if (clips.length > maxLines) {
+    ctx.fillStyle = '#636366';
+    ctx.font = 'italic 14px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillText(`... 及其他 ${clips.length - maxLines} 项`, 90, y);
+  }
+
+  // 转换为 JPEG
+  const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.9 });
+  const buffer = await blob.arrayBuffer();
+
+  return {
+    name: 'TOC',
+    width,
+    height,
+    data: new Uint8Array(buffer)
+  };
 }
 
 async function clipToPdfImage(clip, index) {

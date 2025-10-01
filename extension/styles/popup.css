@@ -281,6 +281,7 @@ button.tertiary:hover {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 6px;
 }
 
 .clip-actions button {
@@ -291,15 +292,29 @@ button.tertiary:hover {
   border: none;
   border-radius: 10px;
   cursor: pointer;
-  background: rgba(245, 87, 108, 0.1);
-  color: #f5576c;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.clip-actions button:hover {
+.clip-actions .edit-btn {
+  background: rgba(102, 126, 234, 0.1);
+  color: #667eea;
+}
+
+.clip-actions .edit-btn:hover {
+  background: rgba(102, 126, 234, 0.2);
+  color: #5568d3;
+  transform: scale(1.05);
+}
+
+.clip-actions .remove-btn {
+  background: rgba(245, 87, 108, 0.1);
+  color: #f5576c;
+}
+
+.clip-actions .remove-btn:hover {
   background: rgba(245, 87, 108, 0.2);
   color: #e03e54;
   transform: scale(1.05);
