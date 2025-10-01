@@ -231,7 +231,8 @@ function renderClips() {
       } else {
         // 截图类型，显示缩略图
         const thumbnail = document.createElement('img');
-        thumbnail.src = clip.dataUrl;
+        // 使用缩略图而不是完整图片
+        thumbnail.src = clip.thumbnailDataUrl || clip.dataUrl || '';
         thumbnail.alt = clip.title || `截图 ${index + 1}`;
         thumbnail.classList.add('clip-thumbnail');
         thumbnail.addEventListener('click', () => handlePreviewClip(clip.id));
@@ -362,22 +363,50 @@ async function handleRevealClip(id) {
   }
 }
 
-function openPreview(clip) {
+async function openPreview(clip) {
   if (!previewOverlayEl || !previewImageEl || !previewTitleEl || !previewMetaEl) {
     return;
   }
 
   state.previewingId = clip.id;
-  previewImageEl.src = clip.dataUrl;
-  previewImageEl.alt = clip.title || clip.filename;
   previewTitleEl.textContent = clip.title || clip.filename;
   previewMetaEl.textContent = `${clip.filename} · ${formatTime(clip.createdAt)}`;
+
+  // 先显示缩略图
+  previewImageEl.src = clip.thumbnailDataUrl || clip.dataUrl || '';
+  previewImageEl.alt = clip.title || clip.filename;
 
   previewOverlayEl.hidden = false;
   previewOverlayEl.classList.add('visible');
 
   if (previewCloseBtn) {
     previewCloseBtn.focus({ preventScroll: true });
+  }
+
+  // 如果有 downloadId，尝试加载完整图片
+  if (clip.downloadId) {
+    try {
+      const downloads = await chrome.downloads.search({ id: clip.downloadId });
+      if (downloads.length > 0 && downloads[0].filename) {
+        const filePath = downloads[0].filename;
+        // 使用 file:// 协议加载本地图片（注意：这可能因浏览器安全限制而失败）
+        // 如果失败，继续使用缩略图
+        const fileUrl = `file:///${filePath.replace(/\\/g, '/')}`;
+
+        // 测试图片是否可以加载
+        const testImg = new Image();
+        testImg.onload = () => {
+          previewImageEl.src = fileUrl;
+        };
+        testImg.onerror = () => {
+          // 无法加载完整图片，继续使用缩略图
+          console.log('Cannot load full image, using thumbnail');
+        };
+        testImg.src = fileUrl;
+      }
+    } catch (error) {
+      console.error('Failed to load full image:', error);
+    }
   }
 }
 

@@ -4,6 +4,13 @@
   z-index: 2147483646;
   cursor: crosshair;
   background: rgba(0, 0, 0, 0.08);
+  pointer-events: auto;
+}
+
+.webclip2pdf-overlay.element-mode {
+  cursor: pointer;
+  background: rgba(0, 0, 0, 0.05);
+  pointer-events: none;
 }
 
 .webclip2pdf-selection-box {
@@ -13,4 +20,53 @@
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.6);
   z-index: 2147483647;
   pointer-events: none;
+}
+
+.webclip2pdf-element-highlight {
+  position: absolute;
+  border: 2px solid #f093fb;
+  background: rgba(240, 147, 251, 0.15);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.8), 0 0 12px rgba(240, 147, 251, 0.5);
+  z-index: 2147483647;
+  pointer-events: none;
+  transition: all 0.15s ease;
+}
+
+.webclip2pdf-mode-indicator {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2147483648;
+  padding: 12px 24px;
+  background: rgba(102, 126, 234, 0.95);
+  backdrop-filter: blur(12px);
+  color: white;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  pointer-events: none;
+  animation: slideDown 0.3s ease;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.webclip2pdf-mode-indicator kbd {
+  display: inline-block;
+  padding: 2px 6px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  font-size: 12px;
+  margin: 0 4px;
 }

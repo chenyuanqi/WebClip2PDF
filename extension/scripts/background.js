@@ -129,6 +129,44 @@ async function capturePart(message, windowId) {
   const dataUrl = await chrome.tabs.captureVisibleTab(windowId, { format: 'png' });
   const { rect, viewport, part } = message;
 
+  console.log('capturePart called:', {
+    rect: rect,
+    part: part,
+    viewport: { scrollX: viewport.scrollX, scrollY: viewport.scrollY }
+  });
+
+  // 如果 part 已经明确指定了 offsetX/Y，直接使用
+  if (part.offsetX !== undefined && part.offsetY !== undefined) {
+    // 元素截图模式：使用明确的偏移量
+    // content-script 已经滚动到正确位置，我们要截取的部分应该在视口顶部
+    const viewportLeft = Math.max(0, rect.left - viewport.scrollX);
+    const viewportTop = Math.max(0, rect.top - viewport.scrollY);
+
+    // 计算要截取的区域大小（不能超出视口边界）
+    const viewportWidth = Math.min(part.width, viewport.width - viewportLeft);
+    const viewportHeight = Math.min(part.height, viewport.height - viewportTop);
+
+    const result = {
+      dataUrl,
+      offsetX: part.offsetX,
+      offsetY: part.offsetY,
+      viewportLeft: viewportLeft,
+      viewportTop: viewportTop,
+      viewportWidth: viewportWidth,
+      viewportHeight: viewportHeight,
+      scale: viewport.dpr || 1
+    };
+
+    console.log('capturePart result:', {
+      rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+      viewport: { scrollX: viewport.scrollX, scrollY: viewport.scrollY, width: viewport.width, height: viewport.height },
+      part: { offsetX: part.offsetX, offsetY: part.offsetY, width: part.width, height: part.height },
+      calculated: { viewportLeft, viewportTop, viewportWidth, viewportHeight }
+    });
+    return result;
+  }
+
+  // 原有的自动计算逻辑（用于手动绘制模式）
   const viewportScrollX = viewport.scrollX || 0;
   const viewportScrollY = viewport.scrollY || 0;
   const viewportWidth = viewport.width;
@@ -206,6 +244,10 @@ async function stitchScrollableScreenshots(message) {
   );
   const ctx = canvas.getContext('2d');
 
+  // 填充白色背景，避免透明区域
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
   // 拼接每个部分
   for (const part of parts) {
     const response = await fetch(part.dataUrl);
@@ -260,13 +302,21 @@ async function stitchAndSaveScreenshots(message) {
   );
   const ctx = canvas.getContext('2d');
 
+  // 填充白色背景，避免透明区域
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  console.log('Stitching full page:', { totalParts: parts.length, canvasSize: { width: canvas.width, height: canvas.height } });
+
   // 拼接每个部分
-  for (const part of parts) {
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
     const response = await fetch(part.dataUrl);
     const blob = await response.blob();
     const bitmap = await createImageBitmap(blob);
 
     if (!part.viewportWidth || !part.viewportHeight) {
+      console.warn(`Part ${i}: skipped due to invalid dimensions`, part);
       continue;
     }
 
@@ -277,6 +327,7 @@ async function stitchAndSaveScreenshots(message) {
     const sh = Math.round(part.viewportHeight * dpr);
 
     if (sw <= 0 || sh <= 0) {
+      console.warn(`Part ${i}: skipped due to zero size`, { sw, sh });
       continue;
     }
 
@@ -284,15 +335,24 @@ async function stitchAndSaveScreenshots(message) {
     const clampedSh = Math.max(0, Math.min(sh, bitmap.height - sy));
 
     if (clampedSw <= 0 || clampedSh <= 0) {
+      console.warn(`Part ${i}: skipped due to clamped zero size`, { clampedSw, clampedSh });
       continue;
     }
 
     const dx = Math.max(0, Math.round(part.offsetX * dpr));
     const dy = Math.max(0, Math.round(part.offsetY * dpr));
 
+    console.log(`Part ${i}: drawing`, {
+      source: { sx, sy, sw: clampedSw, sh: clampedSh },
+      dest: { dx, dy, dw: clampedSw, dh: clampedSh },
+      bitmapSize: { width: bitmap.width, height: bitmap.height }
+    });
+
     // 绘制到画布上
     ctx.drawImage(bitmap, sx, sy, clampedSw, clampedSh, dx, dy, clampedSw, clampedSh);
   }
+
+  console.log('Stitching completed');
 
   // 转换为 PNG
   const finalBlob = await canvas.convertToBlob({ type: 'image/png' });
@@ -368,15 +428,20 @@ async function persistClip(dataUrl, title, url) {
   const filename = `${sanitizedTitle}-${indexLabel}.png`;
 
   const timestamp = new Date().toISOString();
+
+  // 生成缩略图（最大 200x200）用于预览
+  const thumbnailDataUrl = await createThumbnail(dataUrl, 200, 200);
+
   const clip = {
     id: crypto.randomUUID(),
     filename,
     title,
     url,
     createdAt: timestamp,
-    dataUrl
+    thumbnailDataUrl  // 只保存缩略图到 storage，不保存完整图片
   };
 
+  // 下载完整图片到文件系统
   const downloadId = await chrome.downloads.download({
     url: dataUrl,
     filename: `${CLIP_DOWNLOAD_FOLDER}/${filename}`,
@@ -390,6 +455,37 @@ async function persistClip(dataUrl, title, url) {
   await chrome.storage.local.set({ clips, clipCounter: nextCounter });
 
   return clip;
+}
+
+async function createThumbnail(dataUrl, maxWidth, maxHeight) {
+  try {
+    const response = await fetch(dataUrl);
+    const blob = await response.blob();
+    const bitmap = await createImageBitmap(blob);
+
+    // 计算缩放比例
+    let width = bitmap.width;
+    let height = bitmap.height;
+    const ratio = Math.min(maxWidth / width, maxHeight / height, 1);
+
+    if (ratio < 1) {
+      width = Math.round(width * ratio);
+      height = Math.round(height * ratio);
+    }
+
+    // 创建缩略图
+    const canvas = new OffscreenCanvas(width, height);
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(bitmap, 0, 0, width, height);
+
+    // 使用 JPEG 压缩减小体积
+    const thumbnailBlob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.7 });
+    return blobToDataUrl(thumbnailBlob);
+  } catch (error) {
+    console.error('Failed to create thumbnail:', error);
+    // 如果缩略图创建失败，返回空字符串
+    return '';
+  }
 }
 
 async function removeClip(id) {
@@ -722,7 +818,36 @@ async function createPdf(clips) {
 }
 
 async function clipToPdfImage(clip, index) {
-  const response = await fetch(clip.dataUrl);
+  let dataUrl = clip.dataUrl;
+
+  // 如果没有 dataUrl，尝试从文件系统读取
+  if (!dataUrl && clip.downloadId) {
+    const downloads = await chrome.downloads.search({ id: clip.downloadId });
+    if (downloads.length > 0 && downloads[0].exists) {
+      // 读取文件内容
+      const filePath = downloads[0].filename;
+      const fileUrl = `file:///${filePath.replace(/\\/g, '/')}`;
+
+      try {
+        const response = await fetch(fileUrl);
+        const blob = await response.blob();
+        dataUrl = await blobToDataUrl(blob);
+      } catch (error) {
+        console.error('Failed to read file:', error);
+        // 如果读取失败，使用缩略图
+        dataUrl = clip.thumbnailDataUrl;
+      }
+    } else {
+      // 文件不存在，使用缩略图
+      dataUrl = clip.thumbnailDataUrl;
+    }
+  }
+
+  if (!dataUrl) {
+    throw new Error(`No image data for clip ${clip.filename}`);
+  }
+
+  const response = await fetch(dataUrl);
   const blob = await response.blob();
   const bitmap = await createImageBitmap(blob);
   const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);

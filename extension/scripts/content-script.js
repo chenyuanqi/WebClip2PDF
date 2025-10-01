@@ -7,11 +7,25 @@
   let currentRect = null;
   let autoScrollInterval = null;
   let isCapturingFullPage = false;
+  let elementMode = false;
+  let elementHighlight = null;
+  let modeIndicator = null;
+  let hoveredElement = null;
 
   const onMouseDown = (event) => {
     if (!overlay || event.button !== 0) {
       return;
     }
+
+    // 元素选择模式：点击直接选择元素
+    if (elementMode && hoveredElement) {
+      event.preventDefault();
+      event.stopPropagation();
+      selectElement(hoveredElement);
+      return;
+    }
+
+    // 手动绘制模式
     isSelecting = true;
     startX = event.clientX + window.scrollX;
     startY = event.clientY + window.scrollY;
@@ -25,6 +39,12 @@
   };
 
   const onMouseMove = (event) => {
+    // 元素选择模式：高亮鼠标下的元素
+    if (elementMode && !isSelecting) {
+      highlightElementUnderCursor(event);
+      return;
+    }
+
     if (!isSelecting || !selectionBox) {
       return;
     }
@@ -95,10 +115,6 @@
   const removeOverlay = () => {
     stopAutoScroll();
     if (overlay) {
-      overlay.removeEventListener('mousedown', onMouseDown, true);
-      overlay.removeEventListener('click', preventDefaultHandler, true);
-      overlay.removeEventListener('contextmenu', preventDefaultHandler, true);
-      overlay.removeEventListener('keydown', keydownHandler, true);
       overlay.remove();
       overlay = null;
     }
@@ -106,9 +122,19 @@
       selectionBox.remove();
       selectionBox = null;
     }
+    hideElementHighlight();
+    hideModeIndicator();
+
+    // 清理 window 级别的事件监听
+    window.removeEventListener('mousedown', onMouseDown, true);
     window.removeEventListener('mousemove', onMouseMove, true);
     window.removeEventListener('mouseup', onMouseUp, true);
+    window.removeEventListener('click', preventDefaultHandler, true);
+    window.removeEventListener('contextmenu', preventDefaultHandler, true);
+    window.removeEventListener('keydown', keydownHandler, true);
+
     isSelecting = false;
+    elementMode = false;
     currentRect = null;
   };
 
@@ -156,33 +182,55 @@
     const capturedParts = [];
 
     try {
-      for (const shot of screenshots) {
+      for (let i = 0; i < screenshots.length; i++) {
+        const shot = screenshots[i];
+
+        console.log(`Capturing part ${i + 1}/${screenshots.length}`);
+
         window.scrollTo(shot.scrollX, shot.scrollY);
 
-        await new Promise((resolve) => setTimeout(resolve, 150));
+        // 等待滚动和渲染完成
+        await new Promise((resolve) => setTimeout(resolve, 400));
 
-        const response = await chrome.runtime.sendMessage({
-          type: 'CAPTURE_PART',
-          rect,
-          part: {
-            scrollX: window.scrollX,
-            scrollY: window.scrollY,
-            offsetX: shot.offsetX,
-            offsetY: shot.offsetY,
-            width: shot.width,
-            height: shot.height
-          },
-          viewport: {
-            width: window.innerWidth,
-            height: window.innerHeight,
-            scrollX: window.scrollX,
-            scrollY: window.scrollY,
-            dpr
+        // 确保滚动到位
+        const actualScrollX = window.scrollX;
+        const actualScrollY = window.scrollY;
+
+        try {
+          const response = await chrome.runtime.sendMessage({
+            type: 'CAPTURE_PART',
+            rect,
+            part: {
+              scrollX: actualScrollX,
+              scrollY: actualScrollY,
+              offsetX: shot.offsetX,
+              offsetY: shot.offsetY,
+              width: shot.width,
+              height: shot.height
+            },
+            viewport: {
+              width: window.innerWidth,
+              height: window.innerHeight,
+              scrollX: actualScrollX,
+              scrollY: actualScrollY,
+              dpr
+            }
+          });
+
+          if (response && response.dataUrl) {
+            capturedParts.push(response);
+            console.log(`Part ${i + 1} captured successfully`);
+          } else {
+            console.warn(`Part ${i + 1} failed: no dataUrl in response`);
           }
-        });
+        } catch (error) {
+          console.error(`Part ${i + 1} failed:`, error);
+        }
 
-        if (response && response.dataUrl) {
-          capturedParts.push(response);
+        // Chrome 限制每秒最多 2 次 captureVisibleTab 调用
+        // 所以每次截图后等待至少 600ms (1000ms / 2 = 500ms，留点余量)
+        if (i < screenshots.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 600));
         }
       }
     } finally {
@@ -235,6 +283,304 @@
       event.preventDefault();
       cancelSelection();
     }
+    // 按 E 键切换元素选择模式
+    if (event.key === 'e' || event.key === 'E') {
+      event.preventDefault();
+      toggleElementMode();
+    }
+  };
+
+  const toggleElementMode = () => {
+    elementMode = !elementMode;
+    if (overlay) {
+      if (elementMode) {
+        overlay.classList.add('element-mode');
+        showModeIndicator();
+      } else {
+        overlay.classList.remove('element-mode');
+        hideModeIndicator();
+        hideElementHighlight();
+      }
+    }
+  };
+
+  const showModeIndicator = () => {
+    if (!modeIndicator) {
+      modeIndicator = document.createElement('div');
+      modeIndicator.className = 'webclip2pdf-mode-indicator';
+      modeIndicator.innerHTML = '🎯 元素选择模式 - 点击选择元素 | 按 <kbd>E</kbd> 切换手动模式';
+      document.body.appendChild(modeIndicator);
+    }
+  };
+
+  const hideModeIndicator = () => {
+    if (modeIndicator) {
+      modeIndicator.remove();
+      modeIndicator = null;
+    }
+  };
+
+  const highlightElementUnderCursor = (event) => {
+    // 临时隐藏遮罩层和高亮框，以便获取真实的目标元素
+    const overlayDisplay = overlay ? overlay.style.display : '';
+    const highlightDisplay = elementHighlight ? elementHighlight.style.display : '';
+    const indicatorDisplay = modeIndicator ? modeIndicator.style.display : '';
+
+    if (overlay) overlay.style.display = 'none';
+    if (elementHighlight) elementHighlight.style.display = 'none';
+    if (modeIndicator) modeIndicator.style.display = 'none';
+
+    const target = document.elementFromPoint(event.clientX, event.clientY);
+
+    // 恢复显示
+    if (overlay) overlay.style.display = overlayDisplay;
+    if (elementHighlight) elementHighlight.style.display = highlightDisplay;
+    if (modeIndicator) modeIndicator.style.display = indicatorDisplay;
+
+    if (!target) {
+      return;
+    }
+
+    // 避免选择 body 或 html
+    if (target === document.body || target === document.documentElement) {
+      return;
+    }
+
+    // 避免选择插件自己的元素
+    if (target.classList && (
+      target.classList.contains('webclip2pdf-overlay') ||
+      target.classList.contains('webclip2pdf-element-highlight') ||
+      target.classList.contains('webclip2pdf-mode-indicator')
+    )) {
+      return;
+    }
+
+    hoveredElement = target;
+    const rect = target.getBoundingClientRect();
+
+    // 如果元素太小，尝试选择其父元素
+    if (rect.width < 20 || rect.height < 20) {
+      let parent = target.parentElement;
+      while (parent && parent !== document.body && parent !== document.documentElement) {
+        const parentRect = parent.getBoundingClientRect();
+        if (parentRect.width >= 20 && parentRect.height >= 20) {
+          hoveredElement = parent;
+          updateHighlight(parent);
+          return;
+        }
+        parent = parent.parentElement;
+      }
+    }
+
+    updateHighlight(target);
+  };
+
+  const updateHighlight = (element) => {
+    const rect = element.getBoundingClientRect();
+
+    if (!elementHighlight) {
+      elementHighlight = document.createElement('div');
+      elementHighlight.className = 'webclip2pdf-element-highlight';
+      document.body.appendChild(elementHighlight);
+    }
+
+    elementHighlight.style.left = `${rect.left + window.scrollX}px`;
+    elementHighlight.style.top = `${rect.top + window.scrollY}px`;
+    elementHighlight.style.width = `${rect.width}px`;
+    elementHighlight.style.height = `${rect.height}px`;
+    elementHighlight.style.display = 'block';
+  };
+
+  const hideElementHighlight = () => {
+    if (elementHighlight) {
+      elementHighlight.remove();
+      elementHighlight = null;
+    }
+    hoveredElement = null;
+  };
+
+  const selectElement = async (element) => {
+    const rect = element.getBoundingClientRect();
+    const selectionRect = {
+      left: rect.left + window.scrollX,
+      top: rect.top + window.scrollY,
+      width: rect.width,
+      height: rect.height
+    };
+
+    console.log('Element selected:', {
+      tagName: element.tagName,
+      className: element.className,
+      rect: selectionRect
+    });
+
+    // 检查元素是否有效
+    if (selectionRect.width <= 0 || selectionRect.height <= 0) {
+      console.error('Invalid element dimensions');
+      removeOverlay();
+      return;
+    }
+
+    // 清理 UI
+    if (overlay) overlay.style.display = 'none';
+    hideElementHighlight();
+    hideModeIndicator();
+
+    // 使用新的元素截图方案
+    await captureElementDirectly(element, selectionRect);
+
+    removeOverlay();
+  };
+
+  const captureElementDirectly = async (element, rect) => {
+    const dpr = window.devicePixelRatio || 1;
+    const originalScrollX = window.scrollX;
+    const originalScrollY = window.scrollY;
+
+    try {
+      // 检查元素高度，决定使用哪种方案
+      const viewportHeight = window.innerHeight;
+
+      if (rect.height <= viewportHeight) {
+        // 元素在一个视口内，使用简单的单次截图
+        await captureSingleElement(rect, dpr);
+      } else {
+        // 元素超过一个视口，使用分段截图方案
+        await captureElementInParts(rect, dpr);
+      }
+    } finally {
+      // 恢复原始滚动位置
+      window.scrollTo(originalScrollX, originalScrollY);
+    }
+  };
+
+  const captureSingleElement = async (rect, dpr) => {
+    // 滚动到元素顶部
+    window.scrollTo(rect.left, rect.top);
+
+    // 等待渲染
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // 获取实际滚动位置
+    const actualScrollX = window.scrollX;
+    const actualScrollY = window.scrollY;
+
+    // 截图
+    const response = await chrome.runtime.sendMessage({
+      type: 'SELECTION_DONE',
+      rect: {
+        left: rect.left,
+        top: rect.top,
+        width: Math.min(rect.width, window.innerWidth),
+        height: Math.min(rect.height, window.innerHeight)
+      },
+      viewport: {
+        width: window.innerWidth,
+        height: window.innerHeight,
+        scrollX: actualScrollX,
+        scrollY: actualScrollY,
+        dpr
+      },
+      title: document.title,
+      url: window.location.href
+    });
+
+    if (!response || !response.success) {
+      console.error('Screenshot failed');
+    }
+  };
+
+  const captureElementInParts = async (rect, dpr) => {
+    console.log('Capturing large element in parts');
+
+    // 使用固定的视口高度，避免部分重叠
+    const viewportHeight = window.innerHeight;
+    const segments = [];
+
+    // 重要：每段完全不重叠，精确对齐
+    for (let y = 0; y < rect.height; y += viewportHeight) {
+      const segmentHeight = Math.min(viewportHeight, rect.height - y);
+
+      segments.push({
+        scrollY: rect.top + y,  // 滚动到的绝对位置
+        offsetY: y,              // 在最终图片中的 Y 偏移
+        height: segmentHeight    // 段的高度
+      });
+    }
+
+    console.log(`Total segments: ${segments.length}`);
+
+    const capturedParts = [];
+
+    // 逐段截图
+    for (let i = 0; i < segments.length; i++) {
+      const segment = segments[i];
+
+      console.log(`Capturing segment ${i + 1}/${segments.length}:`, {
+        scrollY: segment.scrollY,
+        offsetY: segment.offsetY,
+        height: segment.height
+      });
+
+      // 滚动到该段的顶部
+      window.scrollTo(rect.left, segment.scrollY);
+
+      // 等待渲染和滚动完成
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      const actualScrollX = window.scrollX;
+      const actualScrollY = window.scrollY;
+
+      console.log(`Actual scroll position: ${actualScrollY}, expected: ${segment.scrollY}`);
+
+      try {
+        const response = await chrome.runtime.sendMessage({
+          type: 'CAPTURE_PART',
+          rect: rect,
+          part: {
+            scrollX: actualScrollX,
+            scrollY: actualScrollY,
+            offsetX: 0,
+            offsetY: segment.offsetY,
+            width: rect.width,
+            height: segment.height
+          },
+          viewport: {
+            width: window.innerWidth,
+            height: window.innerHeight,
+            scrollX: actualScrollX,
+            scrollY: actualScrollY,
+            dpr
+          }
+        });
+
+        if (response && response.dataUrl) {
+          capturedParts.push(response);
+          console.log(`Segment ${i + 1} captured successfully`);
+        } else {
+          console.warn(`Segment ${i + 1} returned no data`);
+        }
+      } catch (error) {
+        console.error(`Segment ${i + 1} failed:`, error);
+      }
+
+      // API 限制等待
+      if (i < segments.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 600));
+      }
+    }
+
+    console.log(`Captured ${capturedParts.length}/${segments.length} segments`);
+
+    // 发送拼接请求
+    chrome.runtime.sendMessage({
+      type: 'STITCH_SCREENSHOTS',
+      rect: rect,
+      parts: capturedParts,
+      url: window.location.href,
+      title: document.title,
+      dpr
+    });
   };
 
   const updateSelectionBox = (rect) => {
@@ -257,15 +603,23 @@
     overlay = document.createElement('div');
     overlay.className = 'webclip2pdf-overlay';
     overlay.tabIndex = -1;
-    overlay.addEventListener('mousedown', onMouseDown, true);
+
+    // 在 window 上监听事件，确保能捕获到所有元素
+    window.addEventListener('mousedown', onMouseDown, true);
     window.addEventListener('mousemove', onMouseMove, true);
     window.addEventListener('mouseup', onMouseUp, true);
-    overlay.addEventListener('click', preventDefaultHandler, true);
-    overlay.addEventListener('contextmenu', preventDefaultHandler, true);
-    overlay.addEventListener('keydown', keydownHandler, true);
+    window.addEventListener('click', preventDefaultHandler, true);
+    window.addEventListener('contextmenu', preventDefaultHandler, true);
+    window.addEventListener('keydown', keydownHandler, true);
 
     document.body.appendChild(overlay);
-    overlay.focus({ preventScroll: true });
+
+    // 默认启动元素选择模式
+    setTimeout(() => {
+      elementMode = true;
+      overlay.classList.add('element-mode');
+      showModeIndicator();
+    }, 100);
   };
 
   // 查找选择区域内的可滚动容器
