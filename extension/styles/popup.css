@@ -3,11 +3,11 @@
 }
 
 body {
-  width: 420px;
-  min-height: 560px;
+  width: 480px;
+  min-height: 600px;
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  background: #f5f5f7;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: #1c1c1e;
   position: relative;
 }
@@ -15,13 +15,16 @@ body {
 .toolbar {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px;
-  background: #ffffff;
+  gap: 12px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(12px);
   position: sticky;
   top: 0;
-  border-bottom: 1px solid #e5e5ea;
+  border-bottom: none;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
   z-index: 1;
+  border-radius: 0 0 16px 16px;
 }
 
 .clip-area {
@@ -36,11 +39,12 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 8px 12px;
-  border-radius: 12px;
-  background: #ffffff;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
-  border: 1px solid rgba(60, 60, 67, 0.08);
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.3);
 }
 
 .clip-selectors {
@@ -62,10 +66,11 @@ body {
 }
 
 .toolbar-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: #7c7c80;
-  letter-spacing: 0.4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #6b7280;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
 }
 
 .toolbar-actions {
@@ -78,54 +83,65 @@ body {
 }
 
 .toolbar button {
-  padding: 8px 10px;
+  padding: 10px 14px;
   border: none;
-  border-radius: 9px;
+  border-radius: 12px;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.toolbar button:active {
-  transform: translateY(1px);
+.toolbar button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.toolbar button:active:not(:disabled) {
+  transform: translateY(0);
 }
 
 button.primary {
-  background: linear-gradient(135deg, #0a84ff 0%, #409dff 100%);
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: #ffffff;
-  box-shadow: 0 2px 6px rgba(10, 132, 255, 0.28);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
 }
 
 button.primary:disabled {
-  background: #aacbff;
+  background: linear-gradient(135deg, #c4c4d8 0%, #d4d4e0 100%);
   box-shadow: none;
   cursor: not-allowed;
+  opacity: 0.6;
 }
 
 button.primary.subtle {
-  background: rgba(10, 132, 255, 0.12);
-  color: #0a84ff;
+  background: rgba(102, 126, 234, 0.15);
+  color: #667eea;
   box-shadow: none;
-  border: 1px solid rgba(10, 132, 255, 0.16);
+  border: 1px solid rgba(102, 126, 234, 0.2);
+}
+
+button.primary.subtle:hover:not(:disabled) {
+  background: rgba(102, 126, 234, 0.25);
 }
 
 button.primary.subtle:disabled {
-  background: rgba(10, 132, 255, 0.08);
-  border-color: rgba(10, 132, 255, 0.1);
-  color: rgba(10, 132, 255, 0.5);
+  background: rgba(102, 126, 234, 0.08);
+  border-color: rgba(102, 126, 234, 0.1);
+  color: rgba(102, 126, 234, 0.5);
 }
 
 button.accent {
-  background: linear-gradient(135deg, #5856d6 0%, #5e5ce6 100%);
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
   color: #ffffff;
-  box-shadow: 0 2px 6px rgba(88, 86, 214, 0.28);
+  box-shadow: 0 4px 12px rgba(245, 87, 108, 0.4);
 }
 
 button.accent:disabled {
-  background: #c7c4ff;
+  background: linear-gradient(135deg, #f5c4e0 0%, #f5b4c4 100%);
   box-shadow: none;
   cursor: not-allowed;
+  opacity: 0.6;
 }
 
 button.muted {
@@ -153,10 +169,16 @@ button.tertiary:hover {
 }
 
 .status {
-  min-height: 24px;
-  padding: 0 12px;
+  min-height: 28px;
+  padding: 8px 16px;
   font-size: 13px;
-  color: #3a3a3c;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(8px);
+  border-radius: 8px;
+  margin: 0 16px;
+  display: flex;
+  align-items: center;
 }
 
 .clip-list {
@@ -168,30 +190,50 @@ button.tertiary:hover {
 
 .clip-item {
   display: grid;
-  grid-template-columns: auto 80px 1fr auto;
-  gap: 12px;
-  padding: 12px;
-  border-radius: 12px;
-  background: #ffffff;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.1);
+  grid-template-columns: auto 90px 1fr auto;
+  gap: 14px;
+  padding: 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
   align-items: center;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.clip-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
 }
 
 .clip-item img {
-  width: 80px;
-  height: 80px;
+  width: 90px;
+  height: 90px;
   object-fit: cover;
-  border-radius: 8px;
-  border: 1px solid #d1d1d6;
+  border-radius: 12px;
+  border: 2px solid rgba(102, 126, 234, 0.2);
 }
 
 .clip-thumbnail {
   cursor: zoom-in;
-  transition: transform 0.15s ease;
+  transition: transform 0.2s ease;
 }
 
 .clip-thumbnail:hover {
-  transform: scale(1.02);
+  transform: scale(1.05);
+  border-color: rgba(102, 126, 234, 0.5);
+}
+
+.webpage-icon {
+  width: 90px;
+  height: 90px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 42px;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+  border-radius: 12px;
+  border: 2px solid rgba(102, 126, 234, 0.2);
 }
 
 .clip-meta {
@@ -242,24 +284,25 @@ button.tertiary:hover {
 }
 
 .clip-actions button {
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   padding: 0;
   font-size: 18px;
   border: none;
-  border-radius: 8px;
+  border-radius: 10px;
   cursor: pointer;
-  background: #f5f5f7;
-  color: #8e8e93;
+  background: rgba(245, 87, 108, 0.1);
+  color: #f5576c;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .clip-actions button:hover {
-  background: #e5e5ea;
-  color: #636366;
+  background: rgba(245, 87, 108, 0.2);
+  color: #e03e54;
+  transform: scale(1.05);
 }
 
 .clip-select {
@@ -269,10 +312,13 @@ button.tertiary:hover {
 }
 
 .empty-state {
-  padding: 24px;
+  padding: 48px 24px;
   text-align: center;
-  font-size: 13px;
-  color: #8e8e93;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  backdrop-filter: blur(8px);
 }
 
 .preview-overlay {
@@ -291,22 +337,24 @@ button.tertiary:hover {
 .preview-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(2px);
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
 }
 
 .preview-panel {
   position: relative;
   max-width: 90%;
   max-height: 90%;
-  padding: 16px;
-  border-radius: 14px;
-  background: #ffffff;
-  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.25);
+  padding: 20px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.3);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
   z-index: 1;
+  border: 1px solid rgba(255, 255, 255, 0.4);
 }
 
 .preview-close {

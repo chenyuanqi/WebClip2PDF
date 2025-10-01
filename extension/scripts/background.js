@@ -605,29 +605,103 @@ async function generatePdf(clipIds) {
 }
 
 async function generateWebpagePdf(webpageClips) {
-  // 合并所有网页内容
-  const combinedHtml = webpageClips
-    .map(clip => clip.htmlContent || '')
-    .join('\n<hr style="page-break-after: always;">\n');
+  // 创建一个新标签页来渲染网页内容
+  const combinedHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>WebClip2PDF Export</title>
+  <style>
+    @page {
+      margin: 1cm;
+      size: A4;
+    }
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    .page-break {
+      page-break-after: always;
+      margin: 40px 0;
+      border-bottom: 2px dashed #ccc;
+    }
+  </style>
+</head>
+<body>
+${webpageClips.map((clip, index) => `
+  <div class="clip-page">
+    <h2 style="color: #333; border-bottom: 2px solid #0a84ff; padding-bottom: 8px; margin-bottom: 16px;">
+      ${clip.title || 'Saved Webpage'}
+    </h2>
+    <div style="color: #666; font-size: 12px; margin-bottom: 20px;">
+      URL: ${clip.url}<br>
+      保存时间: ${new Date(clip.createdAt).toLocaleString('zh-CN')}
+    </div>
+    ${clip.htmlContent || ''}
+  </div>
+  ${index < webpageClips.length - 1 ? '<div class="page-break"></div>' : ''}
+`).join('\n')}
+</body>
+</html>`;
 
-  // 创建一个临时的 HTML 文件
   const htmlBlob = new Blob([combinedHtml], { type: 'text/html' });
   const htmlDataUrl = await blobToDataUrl(htmlBlob);
 
-  const indexLabel = String(Date.now());
-  const filename = `WebClip-Webpage-${indexLabel}.html`;
+  // 创建一个临时标签页来打印
+  const tab = await chrome.tabs.create({ url: htmlDataUrl, active: false });
 
-  // 下载 HTML 文件供用户手动转换为 PDF
-  // 注意：由于浏览器 API 限制，我们无法直接将网页转换为 PDF
-  // 用户需要手动打开 HTML 文件并使用浏览器的打印功能转为 PDF
-  await chrome.downloads.download({
-    url: htmlDataUrl,
-    filename: `${CLIP_DOWNLOAD_FOLDER}/${filename}`,
-    saveAs: true,
-    conflictAction: 'uniquify'
+  // 等待页面加载完成
+  await new Promise(resolve => {
+    const listener = (tabId, changeInfo) => {
+      if (tabId === tab.id && changeInfo.status === 'complete') {
+        chrome.tabs.onUpdated.removeListener(listener);
+        resolve();
+      }
+    };
+    chrome.tabs.onUpdated.addListener(listener);
   });
 
-  return { filename, url: htmlDataUrl, note: '网页内容已保存为 HTML，请手动打印为 PDF' };
+  // 等待额外的时间确保内容渲染完成
+  await new Promise(resolve => setTimeout(resolve, 1000));
+
+  const indexLabel = String(Date.now());
+  const filename = `WebClip-${indexLabel}.pdf`;
+
+  try {
+    // 使用 Chrome 的打印 API 生成 PDF
+    const pdfData = await chrome.tabs.printToPDF(tab.id, {
+      paperWidth: 8.27,  // A4 宽度（英寸）
+      paperHeight: 11.69, // A4 高度（英寸）
+      marginTop: 0.4,
+      marginBottom: 0.4,
+      marginLeft: 0.4,
+      marginRight: 0.4,
+      printBackground: true,
+      preferCSSPageSize: false
+    });
+
+    // 将 ArrayBuffer 转换为 Data URL
+    const pdfBase64 = arrayBufferToDataUrl(pdfData, 'application/pdf');
+
+    // 下载 PDF
+    await chrome.downloads.download({
+      url: pdfBase64,
+      filename: `${CLIP_DOWNLOAD_FOLDER}/${filename}`,
+      saveAs: true,
+      conflictAction: 'uniquify'
+    });
+
+    // 关闭临时标签页
+    await chrome.tabs.remove(tab.id);
+
+    return { filename, url: pdfBase64 };
+  } catch (error) {
+    // 出错时也要关闭标签页
+    await chrome.tabs.remove(tab.id).catch(() => {});
+    throw error;
+  }
 }
 
 async function createPdf(clips) {
