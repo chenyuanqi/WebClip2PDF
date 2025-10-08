@@ -671,18 +671,8 @@ async function saveWebpage(message) {
   const nextCounter = clipCounter + 1;
   const indexLabel = String(nextCounter).padStart(3, '0');
 
-  // 创建完整的 HTML 文档
-  const completeHtml = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>${title || 'Saved Webpage'}</title>
-  <style>${styles}</style>
-</head>
-<body>
-${htmlContent}
-</body>
-</html>`;
+  // 创建完整的 HTML 文档（直接使用传来的 htmlContent，它已经是完整的 HTML）
+  const completeHtml = htmlContent;
 
   // 使用页面标题作为文件名，清理非法字符
   const sanitizedTitle = (title || 'webpage').replace(/[<>:"/\\|?*]/g, '-').substring(0, 100);
@@ -762,6 +752,17 @@ async function generatePdf(clipIds) {
 }
 
 async function generateWebpagePdf(webpageClips, pdfFilename) {
+  // 提取每个 clip 的 body 内容，避免嵌套 HTML 结构
+  const extractBodyContent = (htmlContent) => {
+    // 尝试提取 body 标签内的内容
+    const bodyMatch = htmlContent.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+    if (bodyMatch && bodyMatch[1]) {
+      return bodyMatch[1];
+    }
+    // 如果没有 body 标签，返回原内容
+    return htmlContent;
+  };
+
   // 创建合并的 HTML 内容
   const combinedHtml = `
 <!DOCTYPE html>
@@ -770,16 +771,31 @@ async function generateWebpagePdf(webpageClips, pdfFilename) {
   <meta charset="UTF-8">
   <title>WebClip2PDF Export</title>
   <style>
-    @page {
-      margin: 1cm;
-      size: A4;
-    }
-    body {
+    /* 重置所有 fixed 和 absolute 定位，避免遮挡问题 */
+    html, body {
       margin: 0;
       padding: 20px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       background: #f5f5f7;
     }
+
+    /* 强制重置可能的固定定位元素 */
+    body * {
+      position: static !important;
+    }
+
+    /* 只允许我们的容器使用定位 */
+    body > .print-instruction,
+    body > .clip-page,
+    body > .clip-page > .print-header {
+      position: relative !important;
+    }
+
+    @page {
+      margin: 1cm;
+      size: A4;
+    }
+
     .clip-page {
       background: white;
       padding: 30px;
@@ -796,7 +812,7 @@ async function generateWebpagePdf(webpageClips, pdfFilename) {
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: white;
       padding: 20px;
-      margin: -20px -20px 20px -20px;
+      margin: -30px -30px 30px -30px;
       border-radius: 8px 8px 0 0;
     }
     .print-instruction {
@@ -808,6 +824,13 @@ async function generateWebpagePdf(webpageClips, pdfFilename) {
       font-size: 14px;
       color: #856404;
     }
+    .content-wrapper {
+      background: white;
+      overflow: auto;
+      clear: both;
+      padding-top: 10px;
+    }
+
     @media print {
       body {
         background: white;
@@ -830,15 +853,15 @@ ${webpageClips.map((clip, index) => `
   <div class="clip-page">
     <div class="print-header">
       <h2 style="margin: 0; font-size: 20px;">
-        ${clip.title || 'Saved Webpage'}
+        ${(clip.title || 'Saved Webpage').replace(/</g, '&lt;').replace(/>/g, '&gt;')}
       </h2>
       <div style="font-size: 12px; margin-top: 8px; opacity: 0.9;">
-        URL: ${clip.url}<br>
+        URL: ${(clip.url || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}<br>
         保存时间: ${new Date(clip.createdAt).toLocaleString('zh-CN')}
       </div>
     </div>
-    <div style="margin-top: 20px;">
-      ${clip.htmlContent || ''}
+    <div class="content-wrapper">
+      ${extractBodyContent(clip.htmlContent || '')}
     </div>
   </div>
   ${index < webpageClips.length - 1 ? '<div class="page-break"></div>' : ''}

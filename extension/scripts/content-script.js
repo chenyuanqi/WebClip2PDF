@@ -796,14 +796,29 @@
 
   const captureWebpage = async () => {
     try {
-      // 获取整个页面的 HTML 内容
-      const htmlContent = document.documentElement.outerHTML;
+      // 克隆 DOM 并移除插件添加的元素
+      const clonedDoc = document.documentElement.cloneNode(true);
 
-      // 获取所有内联样式和外部样式表
+      // 移除所有插件相关的元素
+      const elementsToRemove = clonedDoc.querySelectorAll(
+        '.webclip2pdf-overlay, .webclip2pdf-selection-box, ' +
+        '.webclip2pdf-element-highlight, .webclip2pdf-mode-indicator'
+      );
+      elementsToRemove.forEach(el => el.remove());
+
+      // 获取清理后的 HTML 内容
+      const htmlContent = clonedDoc.outerHTML;
+
+      // 获取所有内联样式和外部样式表,过滤掉插件相关的样式
       const styles = Array.from(document.styleSheets)
         .map(sheet => {
           try {
             return Array.from(sheet.cssRules)
+              .filter(rule => {
+                // 过滤掉插件相关的样式规则
+                const cssText = rule.cssText || '';
+                return !cssText.includes('webclip2pdf-');
+              })
               .map(rule => rule.cssText)
               .join('\n');
           } catch (e) {
