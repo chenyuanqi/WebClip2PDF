@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebClip2PDF - 大型宣传图块</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "PingFang SC", "Microsoft YaHei", sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      background: #f5f5f5;
+      padding: 20px;
+    }
+
+    .promo-tile {
+      width: 920px;
+      height: 680px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 40px;
+      padding: 60px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .promo-tile::before {
+      content: '';
+      position: absolute;
+      top: -30%;
+      right: -30%;
+      width: 150%;
+      height: 150%;
+      background: radial-gradient(circle, rgba(255,255,255,0.08) 0%, transparent 70%);
+      animation: float 6s ease-in-out infinite;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translate(0, 0); }
+      50% { transform: translate(-20px, -20px); }
+    }
+
+    .left-section {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      color: white;
+      position: relative;
+      z-index: 1;
+    }
+
+    .icon-wrapper {
+      width: 100px;
+      height: 100px;
+      background: white;
+      border-radius: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 30px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+    }
+
+    .icon {
+      font-size: 64px;
+    }
+
+    .title {
+      font-size: 48px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      text-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
+
+    .subtitle {
+      font-size: 20px;
+      margin-bottom: 40px;
+      opacity: 0.95;
+      font-weight: 300;
+    }
+
+    .features {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .feature {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 18px;
+      padding: 12px 0;
+    }
+
+    .feature-icon {
+      width: 32px;
+      height: 32px;
+      background: rgba(255,255,255,0.2);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+
+    .right-section {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      z-index: 1;
+    }
+
+    .demo-container {
+      width: 100%;
+      height: 100%;
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .demo-header {
+      font-size: 14px;
+      font-weight: 600;
+      color: #333;
+      padding-bottom: 12px;
+      border-bottom: 2px solid #f0f0f0;
+    }
+
+    .demo-flow {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+    }
+
+    .demo-images {
+      display: flex;
+      gap: 12px;
+    }
+
+    .demo-image {
+      width: 80px;
+      height: 80px;
+      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 32px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+
+    .demo-arrow {
+      font-size: 32px;
+      color: #667eea;
+    }
+
+    .demo-result {
+      width: 120px;
+      height: 120px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 48px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+    }
+
+    .demo-label {
+      font-size: 14px;
+      color: #666;
+      font-weight: 500;
+    }
+  </style>
+</head>
+<body>
+  <div class="promo-tile">
+    <div class="left-section">
+      <div class="icon-wrapper">
+        <div class="icon">📄</div>
+      </div>
+      <div class="title">WebClip2PDF</div>
+      <div class="subtitle">专业的网页截图与 PDF 工具</div>
+      <div class="features">
+        <div class="feature">
+          <div class="feature-icon">✂️</div>
+          <span>自定义区域截图，精准捕获</span>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">📏</div>
+          <span>完整网页捕获，长页面无压力</span>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">📑</div>
+          <span>多图合成 PDF，保持原始质量</span>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">🔒</div>
+          <span>本地安全存储，隐私无忧</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="right-section">
+      <div class="demo-container">
+        <div class="demo-header">工作流程演示</div>
+        <div class="demo-flow">
+          <div class="demo-images">
+            <div class="demo-image">🖼️</div>
+            <div class="demo-image">🖼️</div>
+            <div class="demo-image">🖼️</div>
+          </div>
+          <div class="demo-label">多张网页截图</div>
+          <div class="demo-arrow">↓</div>
+          <div class="demo-result">📄</div>
+          <div class="demo-label">一键生成 PDF</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    window.addEventListener('load', () => {
+      console.log('大型宣传图块已加载');
+      console.log('尺寸: 920 x 680 像素');
+    });
+  </script>
+</body>
+</html>

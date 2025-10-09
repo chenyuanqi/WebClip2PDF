@@ -1,0 +1,33 @@
+# 这个目录用于存放生成的宣传图片
+
+## 文件清单
+
+完成后应包含以下文件：
+
+- small-promo-tile.png (440 x 280) - 必需
+- large-promo-tile.png (920 x 680) - 推荐
+- screenshot-1.png (1280 x 800) - 区域截图演示
+- screenshot-2.png (1280 x 800) - 控制面板界面
+- screenshot-3.png (1280 x 800) - 截图管理列表
+- screenshot-4.png (1280 x 800) - PDF 生成过程
+- screenshot-5.png (1280 x 800) - 整页截图功能
+
+## 制作方法
+
+查看上级目录的以下文件获取详细说明：
+- README.md - 快速开始指南
+- PROMOTIONAL_GUIDE.md - 完整的设计规范
+- generate-screenshots.md - 详细的截图步骤
+
+## 快速开始
+
+运行脚本打开模板：
+```bash
+../open-templates.sh
+```
+
+或直接在浏览器中打开模板：
+```bash
+open ../templates/small-promo-tile.html
+open ../templates/large-promo-tile.html
+```
